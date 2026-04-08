@@ -15,19 +15,11 @@ load_dotenv()
 # LLM Configuration
 # ============================================================================
 # Using GPT-4o
-model = ChatOpenAI(
-    model="gpt-4o", 
-    temperature=0.7,
-    api_key=os.getenv("OPENAI_API_KEY")
+model = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.4,
+            api_key=os.getenv("GROQ_API_KEY")
 )
-
-# Alternative: Using Groq (commented out)
-# model = ChatGroq(
-#     model="llama-3.3-70b-versatile",
-#     temperature=0.4,
-#     api_key=os.getenv("GROQ_API_KEY")
-# )
-
 # ============================================================================
 # Application Configuration
 # ============================================================================

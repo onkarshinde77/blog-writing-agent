@@ -50,7 +50,11 @@ def workers(payload: Dict) -> Dict:
         Dict: Section content with task ID for ordering
     """
     # Reconstruct Pydantic objects from payload dictionaries
-    task = Task(**payload["task"])
+    task_data = payload["task"]
+    if isinstance(task_data, dict):
+        task = Task(**task_data)
+    else:
+        task = task_data
     plan = Plan(**payload["plan"])
     evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
     topic = payload["topic"]

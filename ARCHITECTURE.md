@@ -3,7 +3,7 @@ Blog Writing Agent - Project Structure Guide
 
 Project Structure:
 ==================
-
+```bash
 blog-writing-agent/
 ├── src/                          # Main source code
 │   ├── __init__.py              # Package initialization
@@ -36,7 +36,7 @@ blog-writing-agent/
 ├── requirements.txt             # Python dependencies
 └── README.md                    # Project documentation
 
-
+```
 Workflow Architecture:
 ======================
 
