@@ -34,11 +34,46 @@ def research_node(state: State) -> Dict:
         return {"evidence": []}
     
     # Extract and structure evidence using LLM
+    import json
+    import time
+    import re
+    
     extractor = model.with_structured_output(EvidencePack)
-    pack = extractor.invoke([
-        SystemMessage(content=RESEARCH_SYSTEM),
-        HumanMessage(content=f"Raw results:\n{raw_results}")
-    ])
+    pack = None
+    
+    for attempt in range(5):
+        try:
+            pack = extractor.invoke([
+                SystemMessage(content=RESEARCH_SYSTEM),
+                HumanMessage(content=f"Raw results:\n{raw_results}")
+            ])
+            break
+        except Exception as e:
+            error_str = str(e)
+            # Try to recover from Groq's 400 tool_use_failed where it emits raw `<function>` tags instead of an API call
+            if "failed_generation" in error_str and "<function=" in error_str:
+                print(f"Attempting to recover failed generation from Groq (attempt {attempt+1})...")
+                # Extract the JSON payload within the <function> tags
+                match = re.search(r'<function.*?>\s*({.*?})\s*</function>', error_str, re.DOTALL | re.IGNORECASE)
+                if match:
+                    try:
+                        json_str = match.group(1)
+                        # Clean up common json string escapes that might be in the error dump
+                        json_str = json_str.replace('\\"', '"').replace('\\n', '\n')
+                        data = json.loads(json_str)
+                        pack = EvidencePack(**data)
+                        break
+                    except Exception as inner_e:
+                        print(f"Failed to decode recovered json: {inner_e}")
+            
+            if attempt == 4:
+                raise e
+                
+            print(f"Research node extractor failed parsing, retrying {attempt+2}/5...")
+            time.sleep(3)
+            
+    if pack is None:
+        return {"evidence": []}
     
     # Deduplicate by URL
     dedup = {}

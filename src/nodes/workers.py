@@ -71,29 +71,45 @@ def workers(payload: Dict) -> Dict:
             for e in evidence[:20]
         )
     
-    # Generate section content using LLM
-    section = model.invoke(
-        [SystemMessage(content=WORKER_SYSTEM),
+    messages = [
+        SystemMessage(content=WORKER_SYSTEM),
         HumanMessage(
-                content=(
-                    f"Blog title: {plan.blog_title}\n"
-                    f"Audience: {plan.audience}\n"
-                    f"Tone: {plan.tone}\n"
-                    f"Blog kind: {plan.blog_kind}\n"
-                    f"Constraints: {plan.constraints}\n"
-                    f"Topic: {topic}\n"
-                    f"Mode: {mode}\n\n"
-                    f"Section title: {task.title}\n"
-                    f"Goal: {task.goal}\n"
-                    f"Target words: {task.target_words}\n"
-                    f"Tags: {task.tags}\n"
-                    f"requires_research: {task.requires_research}\n"
-                    f"requires_citations: {task.requires_citations}\n"
-                    f"requires_code: {task.requires_code}\n"
-                    f"Bullets:{bullets_text}\n\n"
-                    f"Evidence (ONLY use these URLs when citing):\n{evidence_text}\n")
+            content=(
+                f"Blog title: {plan.blog_title}\n"
+                f"Audience: {plan.audience}\n"
+                f"Tone: {plan.tone}\n"
+                f"Blog kind: {plan.blog_kind}\n"
+                f"Constraints: {plan.constraints}\n"
+                f"Topic: {topic}\n"
+                f"Mode: {mode}\n\n"
+                f"Section title: {task.title}\n"
+                f"Goal: {task.goal}\n"
+                f"Target words: {task.target_words}\n"
+                f"Tags: {task.tags}\n"
+                f"requires_research: {task.requires_research}\n"
+                f"requires_citations: {task.requires_citations}\n"
+                f"requires_code: {task.requires_code}\n"
+                f"Bullets:{bullets_text}\n\n"
+                f"Evidence (ONLY use these URLs when citing):\n{evidence_text}\n"
             )
-        ]
-    ).content.strip()
+        )
+    ]
+    
+    import time
+    max_retries = 10
+    section = ""
+    for attempt in range(max_retries):
+        try:
+            section = model.invoke(messages).content.strip()
+            break
+        except Exception as e:
+            if "RateLimitError" in str(type(e)) or "429" in str(e):
+                if attempt == max_retries - 1:
+                    raise e
+                wait_time = 6 + (attempt * 5)  # e.g., 6s, 11s, 16s...
+                print(f"Worker task '{task.title}' hit rate limit. Waiting {wait_time}s before attempt {attempt + 2}/{max_retries}...")
+                time.sleep(wait_time)
+            else:
+                raise e
     
     return {"sections": [(task.id, section)]}
