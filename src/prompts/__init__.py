@@ -3,9 +3,9 @@ System prompts for Blog Writing Agent.
 Contains all LLM instructions for different stages of the workflow.
 """
 
-# ============================================================================
+ 
 # Router System Prompt
-# ============================================================================
+ 
 
 ROUTER_SYSTEM = """You are a routing module for a technical blog planner.
 
@@ -25,9 +25,9 @@ If needs_research=true:
 - If user asked for "last week/this week/latest", reflect that constraint IN THE QUERIES.
 """
  
-# ============================================================================
+ 
 # Research System Prompt
-# ============================================================================
+ 
 RESEARCH_SYSTEM = """You are a research synthesizer for technical writing.
 
 Given raw web search results, produce a deduplicated list of EvidenceItem objects.
@@ -41,9 +41,9 @@ Rules:
 - Deduplicate by URL.
 """
 
-# ============================================================================
+ 
 # Orchestrator System Prompt
-# ============================================================================
+ 
 ORCH_SYSTEM = """You are a senior technical writer and developer advocate.
 Your job is to produce a highly actionable outline for a technical blog post.
 
@@ -79,9 +79,9 @@ Grounding rules:
 Output must strictly match the Plan schema.
 """
 
-# ============================================================================
+ 
 # Worker System Prompt
-# ============================================================================
+ 
 WORKER_SYSTEM = """You are a senior technical writer and developer advocate.
 Write ONE section of a technical blog post in Markdown.
 

@@ -11,9 +11,8 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from src.config import CONFIG
 from src.graph import app
 
-# ============================================================================
+ 
 # Main Execution Function (Programmatic access)
-# ============================================================================
 def run(topic: str) -> dict:
     """Execute the blog writing workflow for a given topic synchronously."""
     out = app.invoke(
@@ -31,9 +30,8 @@ def run(topic: str) -> dict:
     )
     return out
 
-# ============================================================================
+ 
 # Streamlit UI
-# ============================================================================
 st.set_page_config(
     page_title="Blog Writing Agent",
     page_icon="🤖",

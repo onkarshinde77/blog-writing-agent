@@ -8,9 +8,8 @@ from src.config import model
 from src.prompts import ROUTER_SYSTEM
 from src.schemas import State, RouterDecision
 
-# ============================================================================
+ 
 # Router Node
-# ============================================================================
 def router_node(state: State) -> Dict:
     """
     Route the topic determination: decide if research is needed.
@@ -36,9 +35,8 @@ def router_node(state: State) -> Dict:
         "queries": decision.queries
     }
 
-# ============================================================================
+ 
 # Conditional Edge Function
-# ============================================================================
 def route_next(state: State) -> str:
     """
     Conditional routing function: determine next node after router.

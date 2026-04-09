@@ -16,9 +16,7 @@ from src.nodes import (
     decide_images
 )
 
-# ============================================================================
 # Graph Assembly
-# ============================================================================
 def build_graph():
     """
     Build and compile the LangGraph workflow.

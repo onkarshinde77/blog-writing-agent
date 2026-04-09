@@ -6,9 +6,8 @@ from typing import List, Dict
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_tavily import TavilySearch
 
-# ============================================================================
+ 
 # Web Search Tool
-# ============================================================================
 def tavily_search(query: str, max_result: int = 5) -> List[Dict]:
     """
     Perform web search using Tavily Search API.

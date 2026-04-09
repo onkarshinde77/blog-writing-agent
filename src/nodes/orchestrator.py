@@ -8,9 +8,8 @@ from src.config import model
 from src.prompts import ORCH_SYSTEM
 from src.schemas import State, Plan
 
-# ============================================================================
+ 
 # Orchestrator Node
-# ============================================================================
 def orchestrator(state: State) -> Dict:
     """
     Generate blog plan with sections and metadata.
