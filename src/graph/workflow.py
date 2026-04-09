@@ -11,7 +11,9 @@ from src.nodes import (
     orchestrator,
     fanout,
     workers,
-    reducer_node,
+    generate_and_place_images,
+    merge_content,
+    decide_images
 )
 
 # ============================================================================
@@ -27,16 +29,34 @@ def build_graph():
     Workflow:
         START → router → (research → orchestrator | orchestrator) → workers → reducer → END
     """
+
+# build reducer subgraph
+    reducer_graph = StateGraph(State)
+    # nodes
+    reducer_graph.add_node("merge_content", merge_content)
+    reducer_graph.add_node("decide_images", decide_images)
+    reducer_graph.add_node("generate_and_place_images", generate_and_place_images)
+    # edges
+    reducer_graph.add_edge(START, "merge_content")
+    reducer_graph.add_edge("merge_content", "decide_images")
+    reducer_graph.add_edge("decide_images", "generate_and_place_images")
+    reducer_graph.add_edge("generate_and_place_images", END)
+
+    reducer_subgraph = reducer_graph.compile()
+
+
+    # main graph
     graph = StateGraph(State)
 
-    # Add nodes
+    # nodes
     graph.add_node("router", router_node)
     graph.add_node("research", research_node)
     graph.add_node("orchestrator", orchestrator)
     graph.add_node("workers", workers)
-    graph.add_node("reducer", reducer_node)
+    graph.add_node("reducer", reducer_subgraph)
+
     
-    # Add edges
+    # edges
     graph.add_edge(START, "router")
     
     # Conditional edge: research needed or not
@@ -46,16 +66,9 @@ def build_graph():
         {"research": "research", "orchestrator": "orchestrator"}
     )
     
-    # Research → Orchestrator
     graph.add_edge("research", "orchestrator")
-
-    # Orchestrator → Workers (fan out)
     graph.add_conditional_edges("orchestrator", fanout, ["workers"])
-    
-    # Workers → Reducer
     graph.add_edge("workers", "reducer")
-    
-    # Reducer → END
     graph.add_edge("reducer", END)
 
     return graph.compile()

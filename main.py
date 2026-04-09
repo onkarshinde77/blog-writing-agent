@@ -86,7 +86,9 @@ if st.button("Generate Blog Post", type="primary"):
             "research": {"label": "Researching web for evidence", "icon": "🔍"},
             "orchestrator": {"label": "Orchestrating blog plan", "icon": "📋"},
             "workers": {"label": "Workers writing sections", "icon": "✍️"},
-            "reducer": {"label": "Compiling final blog", "icon": "✨"}
+            "merge_content": {"label": "Merging sections", "icon": "🧩"},
+            "decide_images": {"label": "Planning AI images", "icon": "🧠"},
+            "generate_and_place_images": {"label": "Generating images & finishing", "icon": "🖼️"}
         }
         
         # Create a container for every node up front
@@ -128,8 +130,11 @@ if st.button("Generate Blog Post", type="primary"):
             progress_bar.progress(5)
             
             # Using langgraph stream to get real-time updates from nodes
-            for output in app.stream(initial_state, config=CONFIG):
-                for key, value in output.items():
+            for event in app.stream(initial_state, config=CONFIG, subgraphs=True):
+                # When subgraphs=True, it yields ((namespace), chunk)
+                # chunk is typically a dict mapping nodeName -> state updates
+                chunk = event[1]
+                for key, value in chunk.items():
                     node_name = key
                     append_log(f"✅ **{node_name}** executed successfully.")
                     
@@ -166,12 +171,23 @@ if st.button("Generate Blog Post", type="primary"):
                         workers_completed += 1
                         containers["workers"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['workers']['icon']} {ui_nodes['workers']['label']}** - <span class='status-running'>Running... ({workers_completed} section(s) done)</span></div>", unsafe_allow_html=True)
                         if workers_completed == 1:
-                             progress_bar.progress(80) 
+                             progress_bar.progress(70) 
                              
-                    elif node_name == "reducer":
-                        progress_bar.progress(100)
+                    elif node_name == "merge_content":
+                        progress_bar.progress(80)
                         containers["workers"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['workers']['icon']} {ui_nodes['workers']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
-                        containers["reducer"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['reducer']['icon']} {ui_nodes['reducer']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
+                        containers["merge_content"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['merge_content']['icon']} {ui_nodes['merge_content']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
+                        containers["decide_images"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['decide_images']['icon']} {ui_nodes['decide_images']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+
+                    elif node_name == "decide_images":
+                        progress_bar.progress(90)
+                        specs = len(value.get("image_specs", []))
+                        containers["decide_images"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['decide_images']['icon']} {ui_nodes['decide_images']['label']}** - <span class='status-completed'>Completed ({specs} images)</span></div>", unsafe_allow_html=True)
+                        containers["generate_and_place_images"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['generate_and_place_images']['icon']} {ui_nodes['generate_and_place_images']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+
+                    elif node_name == "generate_and_place_images":
+                        progress_bar.progress(100)
+                        containers["generate_and_place_images"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['generate_and_place_images']['icon']} {ui_nodes['generate_and_place_images']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
                         final_state = value
 
             if final_state is None and 'out' in locals():
