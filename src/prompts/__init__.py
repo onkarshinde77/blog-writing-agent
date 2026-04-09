@@ -6,6 +6,7 @@ Contains all LLM instructions for different stages of the workflow.
 # ============================================================================
 # Router System Prompt
 # ============================================================================
+
 ROUTER_SYSTEM = """You are a routing module for a technical blog planner.
 
 Decide whether web research is needed BEFORE planning.
@@ -23,7 +24,7 @@ If needs_research=true:
 - Queries should be scoped and specific (avoid generic queries like just "AI" or "LLM").
 - If user asked for "last week/this week/latest", reflect that constraint IN THE QUERIES.
 """
-
+ 
 # ============================================================================
 # Research System Prompt
 # ============================================================================
@@ -112,14 +113,46 @@ Style:
 - Avoid fluff/marketing. Be precise and implementation-oriented.
 """
 
-DECIDE_IMAGES_SYSTEM = """You are an expert technical editor.
-Decide if images/diagrams are needed for THIS blog.
+DECIDE_IMAGES_SYSTEM = """You are an expert technical editor placing images inside a blog.
 
-Rules:
+Your task: Return the FULL blog markdown with image placeholders inserted INLINE within the text,
+plus the image specs matching each placeholder.
+
+PLACEMENT RULES — CRITICAL:
+- Insert each placeholder IMMEDIATELY AFTER the `## Section Heading` it illustrates.
+- The placeholder must be on its OWN line, between the heading and the first paragraph.
+- NEVER place all placeholders at the end of the document.
+- NEVER group placeholders together.
+- Each placeholder belongs inside ONE section, right below that section's heading.
+
+Example of CORRECT placement:
+## How Attention Works
+[[IMAGE_1]]\n
+Attention allows the model to weigh...
+
+## Encoder-Decoder Architecture  
+[[IMAGE_2]]\n
+The encoder processes the input...
+
+Example of WRONG placement (DO NOT DO THIS):
+## Section 1
+Some text...
+
+## Section 2  
+Some text...
+
+[[IMAGE_1]]
+[[IMAGE_2]]
+
+CONTENT RULES:
 - Max 3 images total.
-- Each image must materially improve understanding (diagram/flow/table-like visual).
-- Insert placeholders exactly: [[IMAGE_1]], [[IMAGE_2]], [[IMAGE_3]].
-- If no images needed: md_with_placeholders must equal input and images=[].
-- Avoid decorative images; prefer technical diagrams with short labels.
-Return strictly GlobalImagePlan.
+- this three image must be different from each other. don't repeat.
+- Only add an image where a diagram, flow chart, or visual genuinely helps understanding.
+- If no images are needed: return the input unchanged and image=[].
+- Prefer technical diagrams with clear labels over decorative art.this lable are in english or insight the image or on the image, not outside
+- For each image, write a precise, detailed Pollinations AI prompt describing the diagram.
+- dont add the caption or description the image , Only add the image alone.
+- after each image placeholder add two new lines like "\n\n". because new line is not coming in markdown or UI.
+
+Return strictly GlobalImagePlan schema.
 """

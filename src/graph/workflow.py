@@ -44,7 +44,6 @@ def build_graph():
 
     reducer_subgraph = reducer_graph.compile()
 
-
     # main graph
     graph = StateGraph(State)
 
@@ -71,9 +70,13 @@ def build_graph():
     graph.add_edge("workers", "reducer")
     graph.add_edge("reducer", END)
 
-    return graph.compile()
+    workflow = graph.compile()
+    
+    # png_bytes = workflow.get_graph().draw_mermaid_png()
+    # with open("graph.png", "wb") as f:
+    #     f.write(png_bytes)
+    
+    return workflow
 
-# ============================================================================
 # Compiled App Instance
-# ============================================================================
 app = build_graph()

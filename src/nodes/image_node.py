@@ -1,23 +1,24 @@
 from __future__ import annotations
 import requests
-
-import operator
-import os
 import re
-from datetime import date, timedelta
 from pathlib import Path
-from typing import TypedDict, List, Optional, Literal, Annotated
-
-from pydantic import BaseModel, Field
-
 from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
 from src.config import model
 from src.schemas import GlobalImagePlan,State
 from src.prompts import DECIDE_IMAGES_SYSTEM
+load_dotenv()
 
+# helper
+def _safe_slug(title: str) -> str:
+    s = title.strip().lower()
+    s = re.sub(r"[^a-z0-9 _-]+", "", s)
+    s = re.sub(r"\s+", "_", s).strip("_")
+    return s or "blog"     
+        
 def _generate_image_bytes(prompt: str) -> bytes:
     """Generate image using Pollinations AI and return bytes."""
+    prompt = prompt + "\n No cartoon , No anime , only clear image"
     clean_prompt = prompt.replace(" ", "%20")
     url = f"https://image.pollinations.ai/prompt/{clean_prompt}?nologo=true&seed=42"
     print(f"Generating image for: {prompt}...")
@@ -27,7 +28,6 @@ def _generate_image_bytes(prompt: str) -> bytes:
     else:
         raise Exception(f"Failed to generate image. Status: {response.status_code}")
 
-load_dotenv()
 
 # node 1
 def merge_content(state: State) -> dict:
@@ -59,9 +59,8 @@ def decide_images(state: State) -> dict:
             ),
         ]
     )
-
     return {
-        "md_with_placeholders": image_plan.md_with_placeholder,
+        "md_with_placeholders": image_plan.md_with_placeholders,
         "image_specs": [img.model_dump() for img in image_plan.image],
     }
     
@@ -83,15 +82,20 @@ def generate_and_place_images(state: State) -> dict:
     images_dir = Path("images")
     images_dir.mkdir(exist_ok=True)
 
+    import base64
+    md_disk = md
+    md_ui = md
+
     for spec in image_specs:
         placeholder = spec["placeholder"]
         filename = spec["filename"]
         out_path = images_dir / filename
 
+        img_bytes = None
         # generate only if needed
         if not out_path.exists():
             try:
-                img_bytes = _gemini_generate_image_bytes(spec["prompt"])
+                img_bytes = _generate_image_bytes(spec["prompt"])
                 out_path.write_bytes(img_bytes)
             except Exception as e:
                 # graceful fallback: keep doc usable
@@ -101,46 +105,22 @@ def generate_and_place_images(state: State) -> dict:
                     f"> **Prompt:** {spec.get('prompt','')}\n>\n"
                     f"> **Error:** {e}\n"
                 )
-                md = md.replace(placeholder, prompt_block)
+                md_disk = md_disk.replace(placeholder, prompt_block)
+                md_ui = md_ui.replace(placeholder, prompt_block)
                 continue
-
-        img_md = f"![{spec['alt']}](images/{filename})\n*{spec['caption']}*"
-        md = md.replace(placeholder, img_md)
-
-    filename = f"{_safe_slug(plan.blog_title)}.md"
-    Path(filename).write_text(md, encoding="utf-8")
-    return {"final": md}
-
-
-
-
-
-# helper
-def _safe_slug(title: str) -> str:
-    s = title.strip().lower()
-    s = re.sub(r"[^a-z0-9 _-]+", "", s)
-    s = re.sub(r"\s+", "_", s).strip("_")
-    return s or "blog"
-
-
-def generate_image(prompt: str, output_file: str = "cat_image.jpg"):
-    # Encode spaces for the URL
-    clean_prompt = prompt.replace(" ", "%20")
-    url = f"https://image.pollinations.ai/prompt/{clean_prompt}?nologo=true&seed=42"
-    
-    print(f"Generating image for: {prompt}...")
-    
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(output_file, "wb") as f:
-                f.write(response.content)
-            print(f"Success! Saved to {output_file}")
         else:
-            print(f"Failed to generate. Status code: {response.status_code}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+            img_bytes = out_path.read_bytes()
 
-if __name__ == "__main__":
-    generate_image("the cat flying on moon")
+        # Update disk version (standard relative link)
+        img_disk_md = f"![{spec['alt']}](images/{filename})\n*{spec['caption']}*"
+        md_disk = md_disk.replace(placeholder, img_disk_md)
+        
+        # Update UI version (Base64 injected to trick Streamlit into rendering local files)
+        mime = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+        b64_data = base64.b64encode(img_bytes).decode("utf-8")
+        img_ui_md = f"![{spec['alt']}](data:{mime};base64,{b64_data})\n*{spec['caption']}*"
+        md_ui = md_ui.replace(placeholder, img_ui_md)
 
+    blog_filename = f"{_safe_slug(plan.blog_title)}.md"
+    Path(blog_filename).write_text(md_disk, encoding="utf-8")
+    return {"final": md_ui}

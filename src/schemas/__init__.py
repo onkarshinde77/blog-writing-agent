@@ -93,5 +93,5 @@ class ImageSpec(BaseModel):
     quality:Literal["low","medium","high"] = "medium"
 
 class GlobalImagePlan(BaseModel):
-    md_with_placeholder:str
+    md_with_placeholders:str
     image:List[ImageSpec] = Field(default_factory=list)
