@@ -9,9 +9,7 @@ from src.prompts import RESEARCH_SYSTEM
 from src.schemas import State, EvidencePack
 from src.tools import tavily_search
 
-# ============================================================================
 # Research Node
-# ============================================================================
 def research_node(state: State) -> Dict:
     """
     Execute web research based on router-generated queries.

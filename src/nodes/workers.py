@@ -9,9 +9,7 @@ from src.config import model
 from src.prompts import WORKER_SYSTEM
 from src.schemas import State, Task, Plan
 
-# ============================================================================
 # Fanout Conditional Edge Function
-# ============================================================================
 def fanout(state: State):
     """
     Fan out to workers: create parallel tasks for each section.
@@ -35,9 +33,7 @@ def fanout(state: State):
     
     return workers_list
 
-# ============================================================================
 # Workers Node
-# ============================================================================
 def workers(payload: Dict) -> Dict:
     """
     Write one blog section based on task and context.

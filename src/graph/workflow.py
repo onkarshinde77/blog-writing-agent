@@ -16,9 +16,7 @@ from src.nodes import (
 import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-# ============================================================================
 # Graph Assembly
-# ============================================================================
 def build_graph():
     """
     Build and compile the LangGraph workflow.
@@ -64,7 +62,4 @@ def build_graph():
     memory = SqliteSaver(conn)
     return graph.compile(checkpointer=memory)
 
-# ============================================================================
-# Compiled App Instance
-# ============================================================================
 app = build_graph()

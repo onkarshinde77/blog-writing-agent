@@ -6,9 +6,7 @@ from typing import Dict
 from pathlib import Path
 from src.schemas import State
 
-# ============================================================================
 # Reducer Node
-# ============================================================================
 def reducer_node(state: State) -> dict:
     """
     Combine all generated sections into final blog post.

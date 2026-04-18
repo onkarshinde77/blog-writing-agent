@@ -30,9 +30,7 @@ class Task(BaseModel):
     requires_research: bool = False
     requires_code: bool = False
 
-# ============================================================================
 # Plan Schema
-# ============================================================================
 class Plan(BaseModel):
     """Complete blog plan with all sections and metadata."""
     blog_title: str
@@ -42,18 +40,14 @@ class Plan(BaseModel):
     blog_kind: Literal["explainer", "tutorial", "news_roundup", "comparison", "system_design"] = "explainer"
     constraints: List[str] = Field(default_factory=list)
 
-# ============================================================================
 # Router Decision Schema
-# ============================================================================
 class RouterDecision(BaseModel):
     """Decision output from router: whether research is needed and mode."""
     needs_research: bool
     mode: Literal["closed_book", "hybrid", "open_book"]
     queries: List[str] = Field(default_factory=list)
 
-# ============================================================================
 # Evidence Schema
-# ============================================================================
 class EvidenceItem(BaseModel):
     """Single research result/evidence item."""
     title: str
@@ -64,9 +58,7 @@ class EvidencePack(BaseModel):
     """Collection of evidence items."""
     evidence: List[EvidenceItem] = Field(default_factory=list)
 
-# ============================================================================
 # State Schema
-# ============================================================================
 class State(TypedDict):
     """Global state for the LangGraph workflow."""
     topic: str
