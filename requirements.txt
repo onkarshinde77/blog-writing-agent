@@ -13,3 +13,4 @@ tavily-python==0.7.23
 pydantic==2.12.5
 python-dotenv==1.2.2
 requests==2.33.1
+streamlit==1.50.0
