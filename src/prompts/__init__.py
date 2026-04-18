@@ -67,7 +67,7 @@ Grounding rules:
 - Mode closed_book: keep it evergreen; do not depend on evidence.
 - Mode hybrid:
   - Use evidence for up-to-date examples (models/tools/releases) in bullets.
-  - Mark sections using fresh info as requires_research=True and requires_citations=True.
+  - Mark sections using fresh info as requires_research=True.
 - Mode open_book:
   - Set blog_kind = "news_roundup".
   - Every section is about summarizing events + implications.
@@ -96,13 +96,9 @@ Scope guard:
   Focus on summarizing events and implications.
 
 Grounding policy:
-- If mode == open_book:
-  - Do NOT introduce any specific event/company/model/funding/policy claim unless it is supported by provided Evidence URLs.
-  - For each event claim, attach a source as a Markdown link: ([Source](URL)).
-  - Only use URLs provided in Evidence. If not supported, write: "Not found in provided sources."
-- If requires_citations == true:
-  - For outside-world claims, cite Evidence URLs the same way.
-- Evergreen reasoning is OK without citations unless requires_citations is true.
+- Do NOT include external links, references, or citations in your output.
+- Write content based on general knowledge without specific source attribution.
+- Avoid mentioning specific URLs or external resources.
 
 Code:
 - If requires_code == true, include at least one minimal, correct code snippet relevant to the bullets.

@@ -67,8 +67,60 @@ This agent uses a multi-agent workflow to research and write a comprehensive blo
 """)
 
 with st.sidebar:
-    st.header("Settings")
-    st.info("The agent will automatically determine if research is needed and coordinate multiple workers to write sections.")
+    st.title("History")    
+    st.divider()
+    if st.button("➕ New Blog", use_container_width=True, type="primary"):
+        st.session_state.viewing_history = False
+        
+    st.header("Previous Blogs")
+    
+    # Fetch all threads from SQLite
+    completed_blogs = []
+    seen_topics = set()
+    import sqlite3
+    try:
+        conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
+        c = conn.cursor()
+        c.execute("SELECT DISTINCT thread_id FROM checkpoints")
+        thread_ids = [row[0] for row in c.fetchall()]
+        conn.close()
+        for tid in thread_ids:
+            states = list(app.get_state_history({"configurable": {"thread_id": tid}}))
+            for state in states:
+                if not state.next and state.values.get("final"):
+                    s_id = state.config.get("configurable", {}).get("checkpoint_id", "")
+                    if s_id not in seen_topics:
+                        seen_topics.add(s_id)
+                        completed_blogs.append(state)
+    except Exception:
+        pass
+                
+    if not completed_blogs:
+        st.info("No history yet.")
+    else:
+        for idx, state in enumerate(completed_blogs):
+            h_topic = state.values.get("topic", f"Blog {idx+1}")
+            # Truncate topic logic for sidebar
+            short_topic = (h_topic[:25] + '...') if len(h_topic) > 25 else h_topic
+            
+            if st.button(f"💬 {short_topic}", key=f"hist_btn_{idx}_{state.config.get('configurable', {}).get('checkpoint_id', idx)}", use_container_width=True):
+                st.session_state.viewing_history = True
+                st.session_state.current_view_blog = state.values.get("final", "")
+                st.session_state.current_view_topic = h_topic
+
+if st.session_state.get("viewing_history", False):
+    h_topic = st.session_state.get("current_view_topic", "Previous Blog")
+    h_final = st.session_state.get("current_view_blog", "")
+    
+    st.subheader(f"📚 {h_topic}")
+    st.markdown(h_final)
+    st.download_button(
+        label="⬇️ Download Markdown File",
+        data=h_final,
+        file_name=f"{h_topic.replace(' ', '_').lower()}.md",
+        mime="text/markdown"
+    )
+    st.stop()
 
 # UI Input for Blog Topic
 topic_input = st.text_input("Enter a topic for the blog post:", placeholder="e.g., The Future of Artificial Intelligence")
@@ -127,8 +179,12 @@ if st.button("Generate Blog Post", type="primary"):
             containers["router"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['router']['icon']} {ui_nodes['router']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
             progress_bar.progress(5)
             
+            import uuid
+            current_thread_id = str(uuid.uuid4())
+            run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
+            
             # Using langgraph stream to get real-time updates from nodes
-            for output in app.stream(initial_state, config=CONFIG):
+            for output in app.stream(initial_state, config=run_config):
                 for key, value in output.items():
                     node_name = key
                     append_log(f"✅ **{node_name}** executed successfully.")

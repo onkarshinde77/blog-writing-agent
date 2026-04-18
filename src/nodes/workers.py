@@ -7,7 +7,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
 from src.config import model
 from src.prompts import WORKER_SYSTEM
-from src.schemas import State, Task, Plan, EvidenceItem
+from src.schemas import State, Task, Plan
 
 # ============================================================================
 # Fanout Conditional Edge Function
@@ -29,9 +29,8 @@ def fanout(state: State):
             "task": task,
             "topic": state['topic'],
             "mode": state['mode'],
-            "plan": state['plan'].model_dump(),
-            "evidence": [e.model_dump() for e in state['evidence']]
-        }) 
+            "plan": state['plan'].model_dump()
+        })
         for task in state['plan'].tasks]
     
     return workers_list
@@ -56,20 +55,11 @@ def workers(payload: Dict) -> Dict:
     else:
         task = task_data
     plan = Plan(**payload["plan"])
-    evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
     topic = payload["topic"]
     mode = payload.get("mode", "closed_book")
     
     # Format bullets as text
     bullets_text = "\n- " + "\n- ".join(task.bullets)
-    
-    # Format evidence as text
-    evidence_text = ""
-    if evidence:
-        evidence_text = "\n".join(
-            f"""- {e.title} | {e.url}""".strip()
-            for e in evidence[:20]
-        )
     
     messages = [
         SystemMessage(content=WORKER_SYSTEM),
@@ -87,10 +77,8 @@ def workers(payload: Dict) -> Dict:
                 f"Target words: {task.target_words}\n"
                 f"Tags: {task.tags}\n"
                 f"requires_research: {task.requires_research}\n"
-                f"requires_citations: {task.requires_citations}\n"
                 f"requires_code: {task.requires_code}\n"
                 f"Bullets:{bullets_text}\n\n"
-                f"Evidence (ONLY use these URLs when citing):\n{evidence_text}\n"
             )
         )
     ]

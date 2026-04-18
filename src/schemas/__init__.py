@@ -7,9 +7,6 @@ import operator
 from typing import List, Dict, Annotated, TypedDict, Literal, Optional
 from pydantic import BaseModel, Field
 
-# ============================================================================
-# Task Schema
-# ============================================================================
 class Task(BaseModel):
     """Represents a single section/task in the blog outline."""
     id: int
@@ -31,7 +28,6 @@ class Task(BaseModel):
     )
     tags: List[str] = Field(default_factory=list)
     requires_research: bool = False
-    requires_citations: bool = False
     requires_code: bool = False
 
 # ============================================================================
