@@ -5,6 +5,7 @@ langchain-groq
 langchain-tavily
 langgraph
 langgraph-checkpoint
+langgraph[sqlite]
 tavily-python
 pydantic
 python-dotenv
