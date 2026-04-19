@@ -63,10 +63,11 @@ The result is a **production-quality blog post** saved to your screen with a one
 |---|---|
 | [LangGraph](https://langchain-ai.github.io/langgraph/) | Multi-agent stateful workflow orchestration |
 | [LangChain](https://www.langchain.com/) | LLM abstraction, message handling |
-| [Groq + LLaMA 3](https://console.groq.com/) | Ultra-fast LLM inference (llama-3.3-70b / llama-3.1-8b) |
+| [Groq + LLaMA 3](https://console.groq.com/) | Ultra-fast LLM inference (llama-3.1-8b) |
 | [Tavily Search](https://tavily.com/) | Real-time web search for research |
 | [Streamlit](https://streamlit.io/) | Interactive web UI |
 | [Pydantic v2](https://docs.pydantic.dev/) | Structured data validation for agent state |
+| [LangSmith](https://smith.langchain.com/) | Complete agent observability and execution tracing |
 | [langgraph-checkpoint-sqlite](https://pypi.org/project/langgraph-checkpoint-sqlite/) | Persistent state storage via SQLite |
 | [Python Dotenv](https://pypi.org/project/python-dotenv/) | Secure API key management |
 
@@ -124,7 +125,7 @@ The entire multi-agent state graph is fully observable with LangSmith. Here is h
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/blog-writing-agent.git
+git clone https://github.com/onkarshinde77/blog-writing-agent.git
 cd blog-writing-agent
 ```
 
@@ -220,36 +221,17 @@ blog-writing-agent/
 
 ## 🎓 What I Learned Building This
 
-- **Workflow of Agentic AI**
-- **Tools Calling**
-- **Orchestrator Pattern**
-- **Parallel Execution**
-- **Building Agents using LangGraph**
-- **LangChain Concepts**
-- **Checkpoints for History**
-- **LangSmith for LLM Tracing**
-- **Prompt Engineering**
+This project was an incredible deep dive into modern agentic AI systems. Here are the core concepts I explored:
 
----
-
-## 📦 Dependencies
-
-```
-langchain
-langchain-community
-langchain-core
-langchain-openai
-langchain-groq
-langchain-tavily
-langgraph
-langgraph-checkpoint
-langgraph-checkpoint-sqlite  # Install separately
-tavily-python
-pydantic
-python-dotenv
-streamlit
-requests
-```
+- **Workflow of Agentic AI** — Moving beyond linear prompts into robust, stateful node-based pipelines.
+- **Building Agents with LangGraph** — Defining nodes, edges, state schemas, and conditional routing in a `StateGraph`.
+- **Parallel Execution / Fan-out Pattern** — Using `Send` to dynamically dispatch work to parallel worker agents simultaneously.
+- **Orchestrator Pattern** — Having a "manager" agent plan the execution and dynamically generate steps for worker agents.
+- **Tool Calling (Tavily)** — Connecting LLMs to live external APIs to retrieve context dynamically.
+- **Core LangChain Concepts** — Constructing robust messages, chat abstractions, and environment configurations.
+- **LangGraph Checkpointing** — Preserving full persistent history into a SQLite database, allowing users to scroll through past blogs seamlessly.
+- **LangSmith Tracing** — Implementing full LLM observability to study rate limits, execution speeds, and inner-thought prompts.
+- **Advanced Prompt Engineering** — Crafting precise system prompts that yield structured, reliable programmatic output using Pydantic schemas.
 
 ---
 
@@ -259,9 +241,8 @@ requests
 - 📖 [LangGraph Checkpointing Guide](https://langchain-ai.github.io/langgraph/concepts/persistence/)
 - 📖 [Groq Console & Models](https://console.groq.com/docs/models)
 - 📖 [Tavily Search API](https://docs.tavily.com/)
+- 📖 [LangSmith Tracing](https://smith.langchain.com/)
 - 📖 [Streamlit Documentation](https://docs.streamlit.io/)
-- 📖 [Pydantic v2 Docs](https://docs.pydantic.dev/latest/)
-- 📖 [LangGraph Send (Fan-out)](https://langchain-ai.github.io/langgraph/how-tos/map-reduce/)
 
 ---
 
