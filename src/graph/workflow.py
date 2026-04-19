@@ -13,8 +13,7 @@ from src.nodes import (
     workers,
     reducer_node,
 )
-import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 # Graph Assembly
 def build_graph():
@@ -58,8 +57,7 @@ def build_graph():
     # Reducer → END
     graph.add_edge("reducer", END)
 
-    conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
-    memory = SqliteSaver(conn)
-    return graph.compile(checkpointer=memory)
+    checkpointer = MemorySaver()
+    return graph.compile(checkpointer=checkpointer)
 
 app = build_graph()
