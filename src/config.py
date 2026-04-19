@@ -6,10 +6,7 @@ from __future__ import annotations
 import os
 import streamlit as st
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
-
-# Load environment variables from .env file
 load_dotenv()
 
 # Streamlit secrets fallback for deployment
