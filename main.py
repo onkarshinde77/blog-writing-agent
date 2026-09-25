@@ -78,6 +78,8 @@ with st.sidebar:
     # Fetch all threads from SQLite
     completed_blogs = []
     seen_topics = set()
+    # Internal placeholder thread IDs that should never appear in history
+    INTERNAL_THREAD_IDS = {"blog-1", "__default__"}
     import sqlite3
     try:
         conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
@@ -86,8 +88,12 @@ with st.sidebar:
         thread_ids = [row[0] for row in c.fetchall()]
         conn.close()
         for tid in thread_ids:
+            # Skip internal/placeholder threads
+            if tid in INTERNAL_THREAD_IDS:
+                continue
             states = list(app.get_state_history({"configurable": {"thread_id": tid}}))
             for state in states:
+                # Only show threads that have a completed final blog
                 if not state.next and state.values.get("final"):
                     s_id = state.config.get("configurable", {}).get("checkpoint_id", "")
                     if s_id not in seen_topics:

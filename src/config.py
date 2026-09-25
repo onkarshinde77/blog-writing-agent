@@ -18,9 +18,9 @@ if tavily_key:
 
 # LLM Configuration
 model = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.4,
-            api_key=groq_key
+    model="openai/gpt-oss-20b",
+    temperature=0.3,
+    api_key=groq_key
 )
 # Application Configuration
 CONFIG = {

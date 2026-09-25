@@ -24,6 +24,7 @@ def orchestrator(state: State) -> Dict:
     evidence = state["evidence"]
     
     # Convert Pydantic objects to dictionaries for LLM context
+    print("evidence : ",evidence)
     evidence = [e.model_dump() for e in evidence[:10]]
     mode = state.get("mode", "closed_book")
     

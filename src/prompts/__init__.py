@@ -17,16 +17,14 @@ Modes:
   Mostly volatile: weekly roundups, "this week", "latest", rankings, pricing, policy/regulation.
 
 If needs_research=true:
-- Output 3–10 high-signal queries.
+- Output 3–5 high-signal queries.
 - Queries should be scoped and specific (avoid generic queries like just "AI" or "LLM").
 - If user asked for "last week/this week/latest", reflect that constraint IN THE QUERIES.
 """
 
 # Research System Prompt
 RESEARCH_SYSTEM = """You are a research synthesizer for technical writing.
-
 Given raw web search results, produce a deduplicated list of EvidenceItem objects.
-
 Rules:
 - Only include items with a non-empty url.
 - Prefer relevant + authoritative sources (company blogs, docs, reputable outlets).
