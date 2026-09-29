@@ -21,12 +21,12 @@ class PublishingWorkflowTests(unittest.TestCase):
         self.assertEqual(nodes.route_blog_approval({"human_blog_decision": {"action": "revise"}}), "revision")
 
     def test_human_blog_approval_routes_to_parallel_sends(self):
-        sends = nodes.route_blog_approval({"topic": "x", "final": "body", "human_blog_decision": {"action": "approve"}, "workflow_id": "run-1", "publish_platforms": ["hashnode", "ghost"]})
+        sends = nodes.route_blog_approval({"topic": "x", "final": "body", "human_blog_decision": {"action": "approve"}, "workflow_id": "run-1", "publish_platforms": ["wordpress", "ghost"]})
         self.assertEqual([send.node for send in sends], ["publisher", "publisher"])
-        self.assertEqual({send.arg["platform"] for send in sends}, {"hashnode", "ghost"})
+        self.assertEqual({send.arg["platform"] for send in sends}, {"wordpress", "ghost"})
 
     def test_each_platform_adapter_is_invoked_independently(self):
-        for platform in ("hashnode", "devto", "ghost"):
+        for platform in ("wordpress", "devto", "ghost"):
             with self.subTest(platform=platform), patch.object(nodes, f"publish_{'devto' if platform == 'devto' else platform}", return_value={"platform": platform, "status": "published", "url": "https://example.com/post", "post_id": "1", "error": None}) as publisher:
                 result = nodes.publisher_task({"platform": platform, "blog": BLOG, "workflow_id": "run"})
                 publisher.assert_called_once()
@@ -34,13 +34,13 @@ class PublishingWorkflowTests(unittest.TestCase):
 
     def test_partial_failure_is_aggregated_without_cancelling_success(self):
         result = nodes.aggregate_publications({"published_results": [
-            {"platform": "hashnode", "status": "published", "url": "https://hashnode.dev/a"},
+            {"platform": "wordpress", "status": "published", "url": "https://sample.wordpress.com/a"},
             {"platform": "devto", "status": "failed", "url": None},
         ]})
-        self.assertEqual(result["successful_platforms"], ["hashnode"])
+        self.assertEqual(result["successful_platforms"], ["wordpress"])
         self.assertEqual(result["failed_platforms"], ["devto"])
-        self.assertEqual(result["all_published_urls"], ["https://hashnode.dev/a"])
-        self.assertEqual(result["primary_blog_url"], "https://hashnode.dev/a")
+        self.assertEqual(result["all_published_urls"], ["https://sample.wordpress.com/a"])
+        self.assertEqual(result["primary_blog_url"], "https://sample.wordpress.com/a")
 
     def test_linkedin_content_node_uses_published_urls(self):
         fake = Mock()
@@ -61,8 +61,8 @@ class PublishingWorkflowTests(unittest.TestCase):
     def test_duplicate_protection_returns_previously_published_result(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"PUBLISHING_DB_PATH": os.path.join(tmp, "posts.db")}):
             send = Mock(return_value=("post-1", "https://example.com/post"))
-            first = adapters._publish_once("hashnode", "workflow", BLOG, send)
-            second = adapters._publish_once("hashnode", "workflow", BLOG, send)
+            first = adapters._publish_once("wordpress", "workflow", BLOG, send)
+            second = adapters._publish_once("wordpress", "workflow", BLOG, send)
         self.assertEqual(first["status"], "published")
         self.assertEqual(second["post_id"], "post-1")
         send.assert_called_once()
@@ -78,13 +78,14 @@ class PublishingWorkflowTests(unittest.TestCase):
                 adapters._request("GET", "https://example.com")
         permanent.assert_called_once()
 
-    def test_hashnode_official_graphql_adapter(self):
+    def test_wordpress_com_official_rest_adapter(self):
         response = Mock()
-        response.json.return_value = {"data": {"publishPost": {"post": {"id": "hn-1", "url": "https://blog.example.com/a"}}}}
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"HASHNODE_API_TOKEN": "token", "HASHNODE_PUBLICATION_ID": "pub", "PUBLISHING_DB_PATH": os.path.join(tmp, "posts.db")}), patch.object(adapters, "_request", return_value=response) as request:
-            result = adapters.publish_hashnode(BLOG, "hn-run")
-        self.assertEqual(result["url"], "https://blog.example.com/a")
-        self.assertEqual(request.call_args.args[1], "https://gql.hashnode.com")
+        response.json.return_value = {"ID": 5, "URL": "https://sample.wordpress.com/post/"}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"WORDPRESS_SITE_ID": "123", "PUBLISHING_DB_PATH": os.path.join(tmp, "posts.db")}), patch("src.publishing.linkedin_oauth.get_wordpress_token", return_value="oauth-token"), patch("src.publishing.linkedin_oauth.get_wordpress_site_id", return_value="123"), patch.object(adapters, "_request", return_value=response) as request:
+            result = adapters.publish_wordpress(BLOG, "wp-run")
+        self.assertEqual(result["url"], "https://sample.wordpress.com/post/")
+        self.assertIn("/rest/v1.1/sites/123/posts/new/", request.call_args.args[1])
+        self.assertEqual(request.call_args.kwargs["data_body"]["status"], "publish")
 
     def test_devto_api_adapter(self):
         response = Mock()

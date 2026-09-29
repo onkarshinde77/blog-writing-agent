@@ -19,11 +19,11 @@ log = logging.getLogger(__name__)
 TIMEOUT = 25
 
 
-def _request(method: str, url: str, *, headers=None, json_body=None) -> requests.Response:
+def _request(method: str, url: str, *, headers=None, json_body=None, data_body=None) -> requests.Response:
     """Retry transient errors only; never log request headers or response bodies."""
     for attempt in range(4):
         try:
-            response = requests.request(method, url, headers=headers, json=json_body, timeout=TIMEOUT)
+            response = requests.request(method, url, headers=headers, json=json_body, data=data_body, timeout=TIMEOUT)
         except requests.RequestException as exc:
             if attempt == 3:
                 log.error("api_request_failed host=%s retry_count=%d classification=network_error", urlparse(url).hostname, attempt)
@@ -91,21 +91,24 @@ def _publish_once(platform: str, workflow_id: str, blog: dict, publish_fn) -> di
     return result
 
 
-def publish_hashnode(blog: dict, workflow_id: str) -> dict:
+def publish_wordpress(blog: dict, workflow_id: str) -> dict:
     def send(data):
-        token, publication = os.getenv("HASHNODE_API_TOKEN"), os.getenv("HASHNODE_PUBLICATION_ID")
-        if not token or not publication: raise RuntimeError("missing_credentials")
-        query = "mutation PublishPost($input: PublishPostInput!) { publishPost(input: $input) { post { id url } } }"
-        inp: dict[str, Any] = {"publicationId": publication, "title": data["title"], "contentMarkdown": data["content"], "tags": [{"slug": t.lower().replace(" ", "-")} for t in data["tags"]]}
-        if data["description"]: inp["subtitle"] = data["description"]
-        if data["cover_image"]: inp["coverImageOptions"] = {"coverImageURL": _safe_url(data["cover_image"])}
-        if data["canonical_url"]: inp["originalArticleURL"] = _safe_url(data["canonical_url"])
-        payload = _request("POST", "https://gql.hashnode.com", headers={"Authorization": token}, json_body={"query": query, "variables": {"input": inp}}).json()
-        if payload.get("errors"): raise RuntimeError("graphql_error")
-        post = payload.get("data", {}).get("publishPost", {}).get("post") or {}
-        if not post.get("url"): raise RuntimeError("invalid_api_response")
-        return post.get("id"), post["url"]
-    return _publish_once("hashnode", workflow_id, blog, send)
+        from src.publishing.linkedin_oauth import get_wordpress_token, get_wordpress_site_id
+        token = get_wordpress_token()
+        site = os.getenv("WORDPRESS_SITE_ID") or get_wordpress_site_id()
+        if not token or not site: raise RuntimeError("wordpress_oauth_required")
+        _safe_url("https://wordpress.com")
+        from markdown import markdown
+        html = markdown(data["content"], extensions=["tables", "fenced_code"])
+        html = bleach.clean(html, tags={"p", "br", "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "pre", "code", "strong", "em", "del", "a", "hr", "table", "thead", "tbody", "tr", "th", "td"}, attributes={"a": ["href", "title"]}, protocols=["http", "https", "mailto"], strip=True)
+        form = {"title": data["title"], "content": html, "excerpt": data["description"], "tags": ",".join(data["tags"]), "status": "publish"}
+        if data["cover_image"]: form["media_urls[]"] = _safe_url(data["cover_image"])
+        endpoint = f"https://public-api.wordpress.com/rest/v1.1/sites/{site}/posts/new/"
+        payload = _request("POST", endpoint, headers={"Authorization": f"Bearer {token}"}, data_body=form).json()
+        url = payload.get("URL") or payload.get("url")
+        if not url: raise RuntimeError("invalid_api_response")
+        return payload.get("ID") or payload.get("id"), url
+    return _publish_once("wordpress", workflow_id, blog, send)
 
 
 def publish_devto(blog: dict, workflow_id: str) -> dict:

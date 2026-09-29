@@ -116,7 +116,7 @@ The original router, optional Tavily research, planner, parallel section workers
 
 The Streamlit dashboard displays the review and approval controls, offers a platform selection before publishing, and shows saved publication outcomes and links. Each generation uses a UUID thread ID; use the same `configurable.thread_id` on every `Command(resume=...)` call. Set `DATABASE_URL` in deployed setups for durable LangGraph PostgreSQL checkpoints. Without it, the graph uses `MemorySaver`; the existing SQLite history is not a production checkpoint store.
 
-Adapters live in `src/publishing/adapters.py`; workflow nodes live in `src/publishing/nodes.py`. They use official APIs: Hashnode GraphQL `publishPost`, Forem `POST /api/articles`, Ghost Admin `POST /ghost/api/admin/posts/?source=html`, and LinkedIn `POST /rest/posts`. API errors are reduced to safe status classifications; credentials and raw API bodies are not logged. Transient network, 429, and 5xx errors receive bounded retries. Permanent 4xx errors do not.
+Adapters live in `src/publishing/adapters.py`; workflow nodes live in `src/publishing/nodes.py`. They use the WordPress.com REST create-post endpoint, Forem `POST /api/articles`, Ghost Admin `POST /ghost/api/admin/posts/?source=html`, and LinkedIn `POST /rest/posts`. WordPress.com OAuth is handled in the backend OAuth service. API errors are reduced to safe status classifications; credentials and raw API bodies are not logged. Transient network, 429, and 5xx errors receive bounded retries. Permanent 4xx errors do not.
 
 #### Configure providers
 
@@ -124,8 +124,9 @@ Copy `.env.example` to `.env` and fill only the services you intend to use. Neve
 
 | Variable | Where to obtain it |
 |---|---|
-| `HASHNODE_API_TOKEN` | Hashnode developer settings: create a Personal Access Token with publication publishing rights. |
-| `HASHNODE_PUBLICATION_ID` | Hashnode publication settings/API; use the publication object ID. |
+| `WORDPRESS_CLIENT_ID`, `WORDPRESS_CLIENT_SECRET` | Register an app at [WordPress.com Applications](https://developer.wordpress.com/apps/). Keep the secret server-side. |
+| `WORDPRESS_REDIRECT_URI` | Callback URL registered for the app; the OAuth host serves `/auth/wordpress/callback`. |
+| `WORDPRESS_SITE_ID` or `WORDPRESS_SITE_URL` | Your WordPress.com site ID or site domain (for example, `mysite.wordpress.com`). OAuth can return the site ID after connecting. |
 | `DEV_API_KEY` | DEV.to account settings → extensions; API key for the authenticated user. |
 | `GHOST_URL` | Your Ghost site/admin domain, including `https://`. |
 | `GHOST_ADMIN_API_KEY` | Ghost Admin → Settings → Integrations → custom integration Admin API key. |
@@ -135,18 +136,19 @@ Copy `.env.example` to `.env` and fill only the services you intend to use. Neve
 | `PUBLISHING_WEB_USER`, `PUBLISHING_WEB_PASSWORD`, `PUBLISHING_UI_PASSWORD` | Set these to protect the OAuth router and Streamlit approval/publishing dashboard. |
 | `DATABASE_URL` | PostgreSQL connection string. Enables the LangGraph Postgres checkpointer. |
 
-Set `PRIMARY_BLOG_PLATFORM` to `hashnode`, `devto`, or `ghost`; if it fails, the first successfully published provider becomes LinkedIn's primary URL. `CANONICAL_URL` is an optional explicit canonical URL; it is not inferred. Ghost uses `GHOST_PUBLISH_STATUS=published` by default after blog approval; set it to `draft` to create a draft.
+Set `PRIMARY_BLOG_PLATFORM` to `wordpress`, `devto`, or `ghost`; if it fails, the first successfully published provider becomes LinkedIn's primary URL. `CANONICAL_URL` is an optional explicit canonical URL; it is not inferred. The WordPress.com create-post endpoint does not expose a general canonical URL field, so the adapter does not set one there. Ghost uses `GHOST_PUBLISH_STATUS=published` by default after blog approval; set it to `draft` to create a draft.
 
 #### Local setup and OAuth
 
-Install `requirements.txt`, configure the existing Gemini/Tavily keys plus provider secrets, and run `streamlit run main.py`. Start PostgreSQL and set `DATABASE_URL` before launch for restart-safe human approvals. Run the LinkedIn OAuth backend with `uvicorn src.publishing.oauth_app:app --host 127.0.0.1 --port 8000` (behind an HTTPS reverse proxy in production). Set `LINKEDIN_REDIRECT_URI` to `https://<your-host>/auth/linkedin/callback`; direct users to `/auth/linkedin/connect`. Both endpoints require HTTP Basic credentials from `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD`. OAuth tokens are encrypted in the publishing SQLite database and never sent back to browser code. An approved LinkedIn application that receives a refresh token will refresh it server-side; otherwise reconnect through `/auth/linkedin/connect` when it expires.
+Install `requirements.txt`, configure the existing Gemini/Tavily keys plus provider secrets, and run `streamlit run main.py`. Start PostgreSQL and set `DATABASE_URL` before launch for restart-safe human approvals. Run the OAuth backend with `uvicorn src.publishing.oauth_app:app --host 127.0.0.1 --port 8000` (behind an HTTPS reverse proxy in production). Set each registered redirect URI to its matching `/auth/linkedin/callback` or `/auth/wordpress/callback` path, then connect through `/auth/linkedin/connect` or `/auth/wordpress/connect`. OAuth routes require HTTP Basic credentials from `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD`. Tokens are encrypted in the publishing SQLite database and never sent back to browser code. WordPress.com posts are published directly after blog approval; LinkedIn still has a separate approval step.
 
 #### Operational notes and limitations
 
 - Forem allows at most four article tags in create requests. The API may return 401, 422, or 429; 429 is retried with bounded backoff.
-- Hashnode publishing requires a token with publication permissions; plan entitlements may limit publishing features.
+- WordPress.com uses its OAuth2 authorization-code flow and REST API. The free WordPress.com plan includes unlimited posts; API publishing still requires registering and authorizing the application.
 - Ghost Admin API keys are JWT credentials; only HTTPS Ghost URLs are accepted. Markdown is converted to HTML using Python-Markdown and Ghost's `source=html` conversion.
 - LinkedIn's Posts API requires `w_member_social`; version is configurable with `LINKEDIN_API_VERSION` (default `202608`, current at implementation time). Member posting access may require app approval.
+- Ghost is open-source, but self-hosting can have hosting costs; Ghost(Pro) is a paid hosted service. Check the hosting option you choose before treating it as a no-cost platform.
 - A local SQLite idempotency ledger is used for provider attempts and OAuth tokens. For multiple production instances, use shared durable idempotency storage; this starter ledger is not a distributed lock.
 - Failures are isolated and LinkedIn drafting continues with the available URLs. A timeout after the provider accepted a post is inherently ambiguous; check the provider dashboard before manually retrying.
 - This repository remains a Streamlit app, not a multi-user production web service. Deployment still needs an authenticated FastAPI host for OAuth, authorization around publishing actions, a secret manager, and shared idempotency storage before horizontal scaling.

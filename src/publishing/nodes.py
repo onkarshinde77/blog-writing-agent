@@ -9,7 +9,7 @@ from typing import Any
 from langgraph.types import interrupt, Send
 from langchain_core.messages import HumanMessage, SystemMessage
 from src.schemas import State
-from src.publishing.adapters import publish_devto, publish_ghost, publish_hashnode, publish_linkedin
+from src.publishing.adapters import publish_devto, publish_ghost, publish_wordpress, publish_linkedin
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def blog_approval_node(state: State) -> dict:
     if action == "edit" and decision.get("blog"):
         return {"blog_plan": decision["blog"], "final": decision["blog"].get("content", state.get("final", "")), "human_blog_decision": {"action": "revise"}, "revision_feedback": "Human edited the article; review the edited article."}
     if action == "approve":
-        return {"human_blog_decision": decision, "publish_platforms": decision.get("platforms", ["hashnode", "devto", "ghost"])}
+        return {"human_blog_decision": decision, "publish_platforms": decision.get("platforms", ["wordpress", "devto", "ghost"])}
     return {"human_blog_decision": decision, "revision_feedback": str(decision.get("feedback", ""))}
 
 
@@ -76,7 +76,7 @@ def publisher_task(state: dict) -> dict:
     started = time.monotonic()
     platform, blog = state["platform"], state["blog"]
     workflow_id = state["workflow_id"]
-    adapter = {"hashnode": publish_hashnode, "devto": publish_devto, "ghost": publish_ghost}[platform]
+    adapter = {"wordpress": publish_wordpress, "devto": publish_devto, "ghost": publish_ghost}[platform]
     result = adapter(blog, workflow_id)
     log.info("publisher_done workflow_id=%s node=%s duration_ms=%d status=%s", workflow_id, platform, int((time.monotonic()-started)*1000), result["status"])
     return {"published_results": [result]}
@@ -84,21 +84,21 @@ def publisher_task(state: dict) -> dict:
 
 def publish_fanout(state: State):
     blog = {**(state.get("blog_plan") or _blog(state)), "content": state.get("final", "")}
-    configured = state.get("publish_platforms") or ["hashnode", "devto", "ghost"]
-    platforms = [p for p in configured if p in {"hashnode", "devto", "ghost"}]
+    configured = state.get("publish_platforms") or ["wordpress", "devto", "ghost"]
+    platforms = [p for p in configured if p in {"wordpress", "devto", "ghost"}]
     return [Send("publisher", {"platform": p, "blog": blog, "workflow_id": state.get("workflow_id") or "default"}) for p in platforms]
 
 
 def aggregate_publications(state: State) -> dict:
     results = {r["platform"]: r for r in state.get("published_results", [])}
-    for platform in ("hashnode", "devto", "ghost"):
+    for platform in ("wordpress", "devto", "ghost"):
         results.setdefault(platform, {"platform": platform, "status": "skipped", "post_id": None, "url": None, "error": "not_selected"})
     import os
-    primary = (state.get("primary_blog_url") or os.getenv("PRIMARY_BLOG_PLATFORM", "hashnode")).lower()
+    primary = (state.get("primary_blog_url") or os.getenv("PRIMARY_BLOG_PLATFORM", "wordpress")).lower()
     if primary.startswith("http"):
         primary = next((p for p, result in results.items() if result.get("url") == primary), "")
     if primary not in results or results[primary].get("status") != "published":
-        primary = next((p for p in ("hashnode", "devto", "ghost") if results[p].get("status") == "published"), "")
+        primary = next((p for p in ("wordpress", "devto", "ghost") if results[p].get("status") == "published"), "")
     return {"published_links": results, "successful_platforms": [p for p,r in results.items() if r["status"] == "published"],
             "failed_platforms": [p for p,r in results.items() if r["status"] == "failed"],
             "all_published_urls": [r["url"] for r in results.values() if r.get("url")],
@@ -148,7 +148,7 @@ def final_result_node(state: State) -> dict:
     blog = state.get("blog_plan") or _blog(state)
     approved = (state.get("human_blog_decision") or {}).get("action") == "approve"
     platforms = state.get("published_links", {}) or {}
-    for platform in ("hashnode", "devto", "ghost"):
+    for platform in ("wordpress", "devto", "ghost"):
         platforms.setdefault(platform, {"status": "not_published", "url": None})
     linkedin = state.get("linkedin_result") or {"status": "rejected" if (state.get("linkedin_human_decision") or {}).get("action") == "reject" else "not_published", "url": None, "post_id": None, "error": None}
     urls = list(state.get("all_published_urls", []))

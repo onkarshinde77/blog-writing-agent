@@ -303,7 +303,7 @@ if active_id:
                     revise_blog = st.button("Revise", key="revise_blog")
                 with c3:
                     reject_blog = st.button("Reject", key="reject_blog")
-                platforms = st.multiselect("Publish to", ["hashnode", "devto", "ghost"], default=["hashnode", "devto", "ghost"])
+                platforms = st.multiselect("Publish to", ["wordpress", "devto", "ghost"], default=["wordpress", "devto", "ghost"], format_func=lambda p: {"wordpress": "WordPress.com", "devto": "DEV.to", "ghost": "Ghost"}[p])
                 feedback = st.text_input("Revision notes", key="blog_feedback")
                 if approve_blog:
                     app.invoke(Command(resume={"action": "approve", "platforms": platforms}), config=active_config)

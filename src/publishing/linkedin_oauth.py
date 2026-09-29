@@ -37,11 +37,13 @@ def _db():
         db.execute("CREATE TABLE IF NOT EXISTS oauth_tokens (account TEXT PRIMARY KEY, token_ciphertext BLOB NOT NULL, expires_at REAL NOT NULL, refresh_ciphertext BLOB, author_urn TEXT)")
         columns = {row[1] for row in db.execute("PRAGMA table_info(oauth_tokens)")}
         if "author_urn" not in columns: db.execute("ALTER TABLE oauth_tokens ADD COLUMN author_urn TEXT")
+        if "site_id" not in columns: db.execute("ALTER TABLE oauth_tokens ADD COLUMN site_id TEXT")
+        if "site_url" not in columns: db.execute("ALTER TABLE oauth_tokens ADD COLUMN site_url TEXT")
 
 
 @router.get("/connect", dependencies=[Depends(_require_auth)])
 def linkedin_connect():
-    required = ("LINKEDIN_CLIENT_ID", "LINKEDIN_REDIRECT_URI")
+    required = ("LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_REDIRECT_URI")
     if any(not os.getenv(k) for k in required): raise HTTPException(503, "LinkedIn OAuth is not configured")
     _db()
     state = secrets.token_urlsafe(32)
@@ -74,6 +76,39 @@ def linkedin_callback(request: Request, code: str, state: str):
     return {"connected": True, "author_urn": f"urn:li:person:{subject}"}
 
 
+@router.get("/wordpress/connect", dependencies=[Depends(_require_auth)])
+def wordpress_connect():
+    required = ("WORDPRESS_CLIENT_ID", "WORDPRESS_CLIENT_SECRET", "WORDPRESS_REDIRECT_URI")
+    if any(not os.getenv(k) for k in required): raise HTTPException(503, "WordPress.com OAuth is not configured")
+    site = os.getenv("WORDPRESS_SITE_ID") or os.getenv("WORDPRESS_SITE_URL")
+    if not site: raise HTTPException(503, "Set WORDPRESS_SITE_ID or WORDPRESS_SITE_URL")
+    _db()
+    state = secrets.token_urlsafe(32)
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute("INSERT INTO oauth_states VALUES (?,?)", (hashlib.sha256(state.encode()).hexdigest(), time.time()))
+    params = {"client_id": os.environ["WORDPRESS_CLIENT_ID"], "redirect_uri": os.environ["WORDPRESS_REDIRECT_URI"], "response_type": "code", "scope": "posts media", "blog": site, "state": state}
+    return RedirectResponse("https://public-api.wordpress.com/oauth2/authorize?" + urlencode(params))
+
+
+@router.get("/wordpress/callback", dependencies=[Depends(_require_auth)])
+def wordpress_callback(code: str, state: str):
+    _db()
+    digest = hashlib.sha256(state.encode()).hexdigest()
+    with sqlite3.connect(DB_PATH) as db:
+        row = db.execute("SELECT created FROM oauth_states WHERE state_hash=?", (digest,)).fetchone()
+        db.execute("DELETE FROM oauth_states WHERE state_hash=?", (digest,))
+    if not row or time.time() - row[0] > 600: raise HTTPException(400, "Invalid or expired OAuth state")
+    data = {"client_id": os.environ["WORDPRESS_CLIENT_ID"], "client_secret": os.environ["WORDPRESS_CLIENT_SECRET"], "code": code, "grant_type": "authorization_code", "redirect_uri": os.environ["WORDPRESS_REDIRECT_URI"]}
+    response = requests.post("https://public-api.wordpress.com/oauth2/token", data=data, timeout=20)
+    if not response.ok: raise HTTPException(502, "WordPress.com token exchange failed")
+    token = response.json()
+    if not token.get("access_token"): raise HTTPException(502, "WordPress.com did not return an access token")
+    f = _fernet()
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute("INSERT OR REPLACE INTO oauth_tokens (account,token_ciphertext,expires_at,refresh_ciphertext,author_urn,site_id,site_url) VALUES (?,?,?,?,?,?,?)", ("wordpress", f.encrypt(token["access_token"].encode()), time.time()+int(token.get("expires_in", 0)) if token.get("expires_in") else 0, None, None, str(token.get("blog_id", "")), token.get("blog_url", "")))
+    return {"connected": True, "site_id": str(token.get("blog_id", "")), "site_url": token.get("blog_url", "")}
+
+
 def get_linkedin_token() -> str | None:
     """Read the encrypted OAuth token for server-side API calls."""
     _db()
@@ -100,3 +135,18 @@ def get_linkedin_author() -> str | None:
     with sqlite3.connect(DB_PATH) as db:
         row = db.execute("SELECT author_urn FROM oauth_tokens WHERE account='linkedin'").fetchone()
     return row[0] if row else os.getenv("LINKEDIN_AUTHOR_URN")
+
+
+def get_wordpress_token() -> str | None:
+    _db()
+    with sqlite3.connect(DB_PATH) as db:
+        row = db.execute("SELECT token_ciphertext,expires_at FROM oauth_tokens WHERE account='wordpress'").fetchone()
+    if not row or (row[1] and row[1] <= time.time()): return None
+    return _fernet().decrypt(row[0]).decode()
+
+
+def get_wordpress_site_id() -> str | None:
+    _db()
+    with sqlite3.connect(DB_PATH) as db:
+        row = db.execute("SELECT site_id FROM oauth_tokens WHERE account='wordpress'").fetchone()
+    return (row[0] if row else None) or os.getenv("WORDPRESS_SITE_ID")
