@@ -13,3 +13,11 @@ requests
 streamlit
 groq
 langchain-groq
+markdown
+bleach
+PyJWT
+cryptography
+fastapi
+uvicorn[standard]
+psycopg[binary,pool]
+langgraph-checkpoint-postgres

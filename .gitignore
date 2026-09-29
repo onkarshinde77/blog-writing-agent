@@ -208,3 +208,6 @@ __marimo__/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+publishing.db
+publishing.db-shm
+publishing.db-wal

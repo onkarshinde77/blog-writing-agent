@@ -17,6 +17,9 @@ from src.graph import app
 # ============================================================================
 def run(topic: str) -> dict:
     """Execute the blog writing workflow for a given topic synchronously."""
+    import uuid
+    thread_id = str(uuid.uuid4())
+    run_config = {"configurable": {"thread_id": thread_id}, "run_name": "blog-writing-agent"}
     out = app.invoke(
         {
             "topic": topic,
@@ -27,8 +30,9 @@ def run(topic: str) -> dict:
             "plan": None,
             "sections": [],
             "final": "",
+            "workflow_id": thread_id,
         },
-        config=CONFIG
+        config=run_config
     )
     return out
 
@@ -176,6 +180,7 @@ if st.button("Generate Blog Post", type="primary"):
             "plan": None,
             "sections": [],
             "final": "",
+            "workflow_id": thread_id,
         }
         
         try:
@@ -189,6 +194,8 @@ if st.button("Generate Blog Post", type="primary"):
             import uuid
             current_thread_id = str(uuid.uuid4())
             run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
+            initial_state["workflow_id"] = current_thread_id
+            st.session_state.active_workflow_id = current_thread_id
             
             # Using langgraph stream to get real-time updates from nodes
             for output in app.stream(initial_state, config=run_config):
@@ -237,8 +244,9 @@ if st.button("Generate Blog Post", type="primary"):
                         containers["reducer"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['reducer']['icon']} {ui_nodes['reducer']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
                         final_state = value
 
-            if final_state is None and 'out' in locals():
-                 pass
+            if final_state is None:
+                 st.session_state.active_workflow_id = current_thread_id
+                 st.info("Blog generated. Continue in the approval dashboard below.")
             elif final_state:
                 final_content = final_state.get("final", "")
                 with final_blog_container:
@@ -260,3 +268,79 @@ if st.button("Generate Blog Post", type="primary"):
             st.error(f"An error occurred during workflow execution: {str(e)}")
             import traceback
             st.code(traceback.format_exc())
+
+# Protect approval/publishing actions when a deployment configures a dashboard password.
+publishing_password = os.getenv("PUBLISHING_UI_PASSWORD")
+if publishing_password and not st.session_state.get("publishing_authenticated"):
+    st.subheader("Publishing dashboard sign in")
+    supplied_password = st.text_input("Publishing password", type="password", key="publishing_password_input")
+    if st.button("Sign in to publishing dashboard") and __import__("hmac").compare_digest(supplied_password, publishing_password):
+        st.session_state.publishing_authenticated = True
+        st.rerun()
+    st.info("Sign in to review and publish saved articles.")
+    st.stop()
+
+# Resumable approval dashboard. LangGraph's interrupt payload is persisted with the stable thread ID.
+active_id = st.session_state.get("active_workflow_id")
+if active_id:
+    from langgraph.types import Command
+    active_config = {"configurable": {"thread_id": active_id}}
+    try:
+        snapshot = app.get_state(active_config)
+        pending = next((item.value for task in snapshot.tasks for item in task.interrupts), None)
+        if pending:
+            st.divider()
+            if pending.get("type") == "blog_review":
+                st.subheader("Blog review")
+                st.json(pending.get("review") or {})
+                current_blog = pending.get("blog") or {}
+                edited_title = st.text_input("Title", current_blog.get("title", ""), key="approval_title")
+                edited_content = st.text_area("Approved blog (Markdown)", current_blog.get("content", ""), height=350, key="approval_content")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    approve_blog = st.button("Approve", key="approve_blog")
+                with c2:
+                    revise_blog = st.button("Revise", key="revise_blog")
+                with c3:
+                    reject_blog = st.button("Reject", key="reject_blog")
+                platforms = st.multiselect("Publish to", ["hashnode", "devto", "ghost"], default=["hashnode", "devto", "ghost"])
+                feedback = st.text_input("Revision notes", key="blog_feedback")
+                if approve_blog:
+                    app.invoke(Command(resume={"action": "approve", "platforms": platforms}), config=active_config)
+                    st.rerun()
+                if revise_blog:
+                    app.invoke(Command(resume={"action": "edit", "blog": {**current_blog, "title": edited_title, "content": edited_content}}), config=active_config)
+                    st.rerun()
+                if reject_blog:
+                    app.invoke(Command(resume={"action": "reject", "feedback": feedback}), config=active_config)
+                    st.rerun()
+            elif pending.get("type") == "linkedin_approval":
+                st.subheader("LinkedIn post approval")
+                draft = pending.get("draft") or {}
+                st.caption("Primary article: " + str(pending.get("primary_url", "")))
+                st.caption("Hashtags: " + " ".join("#" + str(tag).lstrip("#") for tag in draft.get("hashtags", [])))
+                st.json(pending.get("platform_links", {}))
+                linkedin_text = st.text_area("LinkedIn post", draft.get("text", ""), height=220, key="linkedin_text")
+                c1, c2 = st.columns(2)
+                with c1:
+                    approve_linkedin = st.button("Approve & Publish", key="approve_linkedin")
+                with c2:
+                    reject_linkedin = st.button("Reject LinkedIn post", key="reject_linkedin")
+                if approve_linkedin:
+                    app.invoke(Command(resume={"action": "approve", "text": linkedin_text}), config=active_config)
+                    st.rerun()
+                if reject_linkedin:
+                    app.invoke(Command(resume={"action": "reject"}), config=active_config)
+                    st.rerun()
+                if linkedin_text != draft.get("text", ""):
+                    if st.button("Save edit for review", key="save_linkedin_edit"):
+                        app.invoke(Command(resume={"action": "edit", "text": linkedin_text}), config=active_config)
+                        st.rerun()
+        elif snapshot.values.get("final"):
+            st.subheader("Publishing results")
+            st.markdown(snapshot.values.get("final", ""))
+            result = snapshot.values.get("final_result") or {"platforms": snapshot.values.get("published_links", {}), "linkedin": snapshot.values.get("linkedin_result"), "successful_urls": snapshot.values.get("all_published_urls", []), "failed_platforms": snapshot.values.get("failed_platforms", [])}
+            st.json(result)
+            st.text_area("Copy all links", "\n".join(result.get("successful_urls", [])), height=90, key="published_links_copy")
+    except Exception as exc:
+        st.warning("Workflow status is not available yet.")

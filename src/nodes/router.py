@@ -1,7 +1,4 @@
-"""
-Router node for Blog Writing Agent.
-Determines if web research is needed and selects appropriate mode.
-"""
+# Determines if web research is needed and selects appropriate mode.
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.config import model
@@ -12,10 +9,8 @@ from src.schemas import State, RouterDecision
 def router_node(state: State) -> Dict:
     """
     Route the topic determination: decide if research is needed.
-    
     Args:
         state (State): Current workflow state
-    
     Returns:
         Dict: Updated state with needs_research, mode, and queries
     """
@@ -36,13 +31,4 @@ def router_node(state: State) -> Dict:
 
 # Conditional Edge Function
 def route_next(state: State) -> str:
-    """
-    Conditional routing function: determine next node after router.
-    
-    Args:
-        state (State): Current workflow state
-    
-    Returns:
-        str: Next node name ("research" or "orchestrator")
-    """
     return "research" if state['needs_research'] else "orchestrator"

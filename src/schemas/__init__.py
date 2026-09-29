@@ -36,7 +36,7 @@ class Plan(BaseModel):
     blog_title: str
     tasks: List[Task]
     tone: str = Field(..., description="Writing tone (e.g., practical, crisp).")
-    audience: str = Field(..., description="Who this blog is for.")
+    audience: str = Field(..., description="Who this blog is for. (e.g: enginear, normal people, doctor, student, proffessor/teacher)")
     blog_kind: Literal["explainer", "tutorial", "news_roundup", "comparison", "system_design"] = "explainer"
     constraints: List[str] = Field(default_factory=list)
 
@@ -54,9 +54,41 @@ class EvidenceItem(BaseModel):
     url: str
     content: str
 
-class EvidencePack(BaseModel):
-    """Collection of evidence items."""
-    evidence: List[EvidenceItem] = Field(default_factory=list)
+
+class BlogData(TypedDict):
+    title: str
+    content: str
+    description: str
+    tags: List[str]
+    cover_image: Optional[str]
+    canonical_url: str
+
+
+class ReviewResult(TypedDict):
+    status: Literal["approved", "needs_revision"]
+    issues: List[str]
+    suggestions: List[str]
+
+
+class HumanDecision(TypedDict, total=False):
+    action: Literal["approve", "revise", "edit", "reject", "edited"]
+    feedback: str
+    platforms: List[str]
+    blog: BlogData
+    text: str
+
+
+class PublicationResult(TypedDict):
+    platform: str
+    status: str
+    post_id: Optional[str]
+    url: Optional[str]
+    error: Optional[str]
+
+
+class LinkedInDraft(TypedDict):
+    text: str
+    hashtags: List[str]
 
 # State Schema
 class State(TypedDict):
@@ -71,3 +103,20 @@ class State(TypedDict):
     # workers
     sections: Annotated[List[tuple[int, str]], operator.add]  # (task_id, section_md)
     final: str
+    # Review, approval, and distribution state (the original generation state is unchanged).
+    blog_plan: Optional[BlogData]
+    review: Optional[ReviewResult]
+    human_blog_decision: Optional[HumanDecision]
+    revision_feedback: str
+    publish_platforms: List[str]
+    published_results: Annotated[List[PublicationResult], operator.add]
+    published_links: Dict[str, PublicationResult]
+    successful_platforms: List[str]
+    failed_platforms: List[str]
+    all_published_urls: List[str]
+    primary_blog_url: str
+    linkedin_draft: Optional[LinkedInDraft]
+    linkedin_human_decision: Optional[HumanDecision]
+    linkedin_result: Optional[PublicationResult]
+    workflow_id: str
+    final_result: Optional[dict]

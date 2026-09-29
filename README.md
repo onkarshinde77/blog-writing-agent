@@ -104,8 +104,52 @@ START
   │ Reducer │  ← Merges all sections into final blog
   └─────────┘
          │
-        END
+ Review → Blog approval → parallel publishers → aggregate
+                           │                    │
+                           └ revise → Review    ▼
+                                         LinkedIn draft → approval → publish → END
 ```
+
+### Review and publishing workflow
+
+The original router, optional Tavily research, planner, parallel section workers, and reducer are unchanged. The reducer still creates `final`; it now leads into a review node and a persisted human approval interrupt. Editing/revising returns the article to review. Approval triggers three concurrent LangGraph `Send` tasks, then aggregation and a second approval before the LinkedIn API call. Rejecting either approval ends the workflow without making the gated publication(s).
+
+The Streamlit dashboard displays the review and approval controls, offers a platform selection before publishing, and shows saved publication outcomes and links. Each generation uses a UUID thread ID; use the same `configurable.thread_id` on every `Command(resume=...)` call. Set `DATABASE_URL` in deployed setups for durable LangGraph PostgreSQL checkpoints. Without it, the graph uses `MemorySaver`; the existing SQLite history is not a production checkpoint store.
+
+Adapters live in `src/publishing/adapters.py`; workflow nodes live in `src/publishing/nodes.py`. They use official APIs: Hashnode GraphQL `publishPost`, Forem `POST /api/articles`, Ghost Admin `POST /ghost/api/admin/posts/?source=html`, and LinkedIn `POST /rest/posts`. API errors are reduced to safe status classifications; credentials and raw API bodies are not logged. Transient network, 429, and 5xx errors receive bounded retries. Permanent 4xx errors do not.
+
+#### Configure providers
+
+Copy `.env.example` to `.env` and fill only the services you intend to use. Never put these values in frontend code or commit `.env`.
+
+| Variable | Where to obtain it |
+|---|---|
+| `HASHNODE_API_TOKEN` | Hashnode developer settings: create a Personal Access Token with publication publishing rights. |
+| `HASHNODE_PUBLICATION_ID` | Hashnode publication settings/API; use the publication object ID. |
+| `DEV_API_KEY` | DEV.to account settings → extensions; API key for the authenticated user. |
+| `GHOST_URL` | Your Ghost site/admin domain, including `https://`. |
+| `GHOST_ADMIN_API_KEY` | Ghost Admin → Settings → Integrations → custom integration Admin API key. |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn Developer app credentials. Add the exact callback URL as an authorized redirect URI and request `w_member_social`, `openid`, and `profile`. Member posting access depends on LinkedIn app approval. |
+| `LINKEDIN_REDIRECT_URI` | Registered backend callback URL served by `src.publishing.oauth_app`; it exposes `/auth/linkedin/connect` and `/auth/linkedin/callback`. |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key to encrypt LinkedIn tokens at rest (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Store it in a secret manager. |
+| `PUBLISHING_WEB_USER`, `PUBLISHING_WEB_PASSWORD`, `PUBLISHING_UI_PASSWORD` | Set these to protect the OAuth router and Streamlit approval/publishing dashboard. |
+| `DATABASE_URL` | PostgreSQL connection string. Enables the LangGraph Postgres checkpointer. |
+
+Set `PRIMARY_BLOG_PLATFORM` to `hashnode`, `devto`, or `ghost`; if it fails, the first successfully published provider becomes LinkedIn's primary URL. `CANONICAL_URL` is an optional explicit canonical URL; it is not inferred. Ghost uses `GHOST_PUBLISH_STATUS=published` by default after blog approval; set it to `draft` to create a draft.
+
+#### Local setup and OAuth
+
+Install `requirements.txt`, configure the existing Gemini/Tavily keys plus provider secrets, and run `streamlit run main.py`. Start PostgreSQL and set `DATABASE_URL` before launch for restart-safe human approvals. Run the LinkedIn OAuth backend with `uvicorn src.publishing.oauth_app:app --host 127.0.0.1 --port 8000` (behind an HTTPS reverse proxy in production). Set `LINKEDIN_REDIRECT_URI` to `https://<your-host>/auth/linkedin/callback`; direct users to `/auth/linkedin/connect`. Both endpoints require HTTP Basic credentials from `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD`. OAuth tokens are encrypted in the publishing SQLite database and never sent back to browser code. An approved LinkedIn application that receives a refresh token will refresh it server-side; otherwise reconnect through `/auth/linkedin/connect` when it expires.
+
+#### Operational notes and limitations
+
+- Forem allows at most four article tags in create requests. The API may return 401, 422, or 429; 429 is retried with bounded backoff.
+- Hashnode publishing requires a token with publication permissions; plan entitlements may limit publishing features.
+- Ghost Admin API keys are JWT credentials; only HTTPS Ghost URLs are accepted. Markdown is converted to HTML using Python-Markdown and Ghost's `source=html` conversion.
+- LinkedIn's Posts API requires `w_member_social`; version is configurable with `LINKEDIN_API_VERSION` (default `202608`, current at implementation time). Member posting access may require app approval.
+- A local SQLite idempotency ledger is used for provider attempts and OAuth tokens. For multiple production instances, use shared durable idempotency storage; this starter ledger is not a distributed lock.
+- Failures are isolated and LinkedIn drafting continues with the available URLs. A timeout after the provider accepted a post is inherently ambiguous; check the provider dashboard before manually retrying.
+- This repository remains a Streamlit app, not a multi-user production web service. Deployment still needs an authenticated FastAPI host for OAuth, authorization around publishing actions, a secret manager, and shared idempotency storage before horizontal scaling.
 
 ### 🔍 LangSmith Tracing
 The entire multi-agent state graph is fully observable with LangSmith. Here is how an execution trace looks under the hood:

@@ -2,6 +2,7 @@
 Workers node for Blog Writing Agent.
 Generates individual blog sections in parallel.
 """
+import time
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
@@ -13,10 +14,8 @@ from src.schemas import State, Task, Plan
 def fanout(state: State):
     """
     Fan out to workers: create parallel tasks for each section.
-    
     Args:
         state (State): Current workflow state with plan
-    
     Returns:
         List[Send]: List of Send objects routing to workers
     """
@@ -37,10 +36,8 @@ def fanout(state: State):
 def workers(payload: Dict) -> Dict:
     """
     Write one blog section based on task and context.
-    
     Args:
         payload (Dict): Contains task, plan, evidence, topic, and mode
-    
     Returns:
         Dict: Section content with task ID for ordering
     """
@@ -79,7 +76,6 @@ def workers(payload: Dict) -> Dict:
         )
     ]
     
-    import time
     max_retries = 10
     section = ""
     for attempt in range(max_retries):
