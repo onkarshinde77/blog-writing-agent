@@ -111,7 +111,15 @@ def build_graph():
     graph.add_edge("quality_research", "quality_check")
     graph.add_edge("quality_revision", "quality_check")
     graph.add_edge("review", "blog_approval")
-    graph.add_conditional_edges("blog_approval", route_blog_approval)
+    # Declare all possible destinations so LangGraph's static graph visualizer
+    # can show the approval branches. On approval, route_blog_approval returns
+    # Send objects for each selected publisher; Send destinations bypass this
+    # label map at runtime, so the parallel publishing behavior is unchanged.
+    graph.add_conditional_edges(
+        "blog_approval",
+        route_blog_approval,
+        {"publisher": "publisher", "revision": "revision", "finish": "finish"},
+    )
     graph.add_edge("revision", "quality_check")
     graph.add_conditional_edges("publisher", lambda state: "aggregate_publications", ["aggregate_publications"])
     graph.add_edge("aggregate_publications", "linkedin_content")
@@ -128,3 +136,6 @@ app = build_graph()
 graph = app.get_graph()
 output_path = Path(__file__).parent / "graph.png"
 graph.draw_mermaid_png(output_file_path=str(output_path))
+
+
+

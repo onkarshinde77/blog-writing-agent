@@ -8,15 +8,12 @@ _FENCED_CODE = re.compile(r"(```[\s\S]*?```|~~~[\s\S]*?~~~)")
 _INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 _SQUARE_EQUATION = re.compile(r"(?m)^([ \t]*)\[\s*(.+?)\s*\]([ \t]*)$")
 _PAREN_MATH = re.compile(r"\(([^()\n]{1,240})\)")
-
-
-def _display_math(match: re.Match[str]) -> str:
-    expression = match.group(2).strip()
-    if expression.startswith("$$") and expression.endswith("$$"):
-        return f"{match.group(1)}\n{expression}\n{match.group(3)}"
-    if expression.startswith("$") and expression.endswith("$"):
-        expression = expression[1:-1].strip()
-    return f"{match.group(1)}\n$$\n{expression}\n$${match.group(3)}"
+_DISPLAY_DOLLARS = re.compile(r"\$\$(.+?)\$\$", re.S)
+_DISPLAY_BRACKETS = re.compile(r"\\{1,2}\[([\s\S]+?)\\{1,2}\]")
+_INLINE_LATEX = re.compile(r"\\{1,2}\(([\s\S]+?)\\{1,2}\)")
+_BARE_LATEX_LINE = re.compile(
+    r"(?m)^([ \t]*)(?=.*\\(?:frac|sum|prod|math[a-zA-Z]*|partial|sqrt|begin)\b)(.+?)([ \t]*)$"
+)
 
 
 def _is_math_expression(expression: str) -> bool:
@@ -39,8 +36,22 @@ def _normalize_plain_markdown(text: str) -> str:
         return f"\x00INLINECODE{len(code_spans) - 1}\x00"
 
     text = _INLINE_CODE.sub(hold_code, text)
-    text = re.sub(r"(?ms)^([ \t]*)\\\[(.*?)\\\]([ \t]*)$", _display_math, text)
-    text = re.sub(r"\\\((.+?)\\\)", lambda m: f"${m.group(1).strip()}$", text, flags=re.S)
+
+    # A model may emit either one or two backslashes before TeX delimiters.
+    # Streamlit requires display-math $$ delimiters to be on their own lines,
+    # so normalize even when the model puts an equation on a prose line.
+    def display_block(match: re.Match[str]) -> str:
+        expression = match.group(1).strip().replace(r"\\", "\\")
+        return f"\n\n$$\n{expression}\n$$\n\n"
+
+    text = _DISPLAY_BRACKETS.sub(display_block, text)
+    text = _DISPLAY_DOLLARS.sub(display_block, text)
+
+    def inline_latex(match: re.Match[str]) -> str:
+        expression = match.group(1).strip().replace("\\\\", "\\")
+        return f"${expression}$"
+
+    text = _INLINE_LATEX.sub(inline_latex, text)
 
     def square_equation(match: re.Match[str]) -> str:
         expression = match.group(2).strip()
@@ -53,6 +64,13 @@ def _normalize_plain_markdown(text: str) -> str:
         return f"{match.group(1)}\n$$\n{expression}\n$${match.group(3)}"
 
     text = _SQUARE_EQUATION.sub(square_equation, text)
+
+    # Handle unwrapped standalone LaTeX equations as display math as well.
+    def bare_latex_equation(match: re.Match[str]) -> str:
+        expression = match.group(2).strip().replace(r"\\", "\\")
+        return f"{match.group(1)}\n$$\n{expression}\n$$"
+
+    text = _BARE_LATEX_LINE.sub(bare_latex_equation, text)
 
     def inline_equation(match: re.Match[str]) -> str:
         expression = match.group(1).strip()
