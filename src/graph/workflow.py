@@ -125,6 +125,6 @@ def build_graph():
     return graph.compile(checkpointer=checkpointer)
 
 app = build_graph()
-# graph = app.get_graph()
-# output_path = Path(__file__).parent / "graph.png"
-# graph.draw_mermaid_png(output_file_path=str(output_path))
+graph = app.get_graph()
+output_path = Path(__file__).parent / "graph.png"
+graph.draw_mermaid_png(output_file_path=str(output_path))

@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.config import CONFIG
 from src.graph import app
+from src.blog_history import list_blog_history, recover_checkpoint_history
 from src.markdown_math import normalize_markdown_math
 
 
@@ -92,56 +93,45 @@ with st.sidebar:
         
     st.header("Previous Blogs")
     
-    # Fetch all threads from SQLite
-    completed_blogs = []
-    seen_topics = set()
-    # Internal placeholder thread IDs that should never appear in history
-    INTERNAL_THREAD_IDS = {"blog-1", "__default__"}
-    import sqlite3
+    # Load saved articles from the same local SQLite file used by checkpoints.
     try:
-        conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
-        c = conn.cursor()
-        c.execute("SELECT DISTINCT thread_id FROM checkpoints")
-        thread_ids = [row[0] for row in c.fetchall()]
-        conn.close()
-        for tid in thread_ids:
-            # Skip internal/placeholder threads
-            if tid in INTERNAL_THREAD_IDS:
-                continue
-            states = list(app.get_state_history({"configurable": {"thread_id": tid}}))
-            for state in states:
-                # Only show threads that have a completed final blog
-                if not state.next and state.values.get("final"):
-                    s_id = state.config.get("configurable", {}).get("checkpoint_id", "")
-                    if s_id not in seen_topics:
-                        seen_topics.add(s_id)
-                        completed_blogs.append(state)
-    except Exception:
-        pass
+        recovered_count = 0
+        if not st.session_state.get("blog_history_recovered"):
+            recovered_count = recover_checkpoint_history(app)
+            st.session_state.blog_history_recovered = True
+        saved_blogs = list_blog_history()
+        if recovered_count:
+            st.caption(f"Recovered {recovered_count} blog(s) from existing checkpoints.")
+    except Exception as exc:
+        saved_blogs = []
+        st.warning(f"Could not load local blog history ({type(exc).__name__}).")
                 
-    if not completed_blogs:
+    if not saved_blogs:
         st.info("No history yet.")
     else:
-        for idx, state in enumerate(completed_blogs):
-            h_topic = state.values.get("topic", f"Blog {idx+1}")
-            # Truncate topic logic for sidebar
-            short_topic = (h_topic[:25] + '...') if len(h_topic) > 25 else h_topic
+        for idx, blog in enumerate(saved_blogs):
+            h_title = blog.get("title") or blog.get("topic") or f"Blog {idx+1}"
+            short_title = (h_title[:25] + '...') if len(h_title) > 25 else h_title
             
-            if st.button(f"💬 {short_topic}", key=f"hist_btn_{idx}_{state.config.get('configurable', {}).get('checkpoint_id', idx)}", use_container_width=True):
+            if st.button(f"💬 {short_title}", key=f"hist_btn_{blog['thread_id']}", use_container_width=True):
                 st.session_state.viewing_history = True
-                st.session_state.current_view_blog = normalize_markdown_math(state.values.get("final", ""))
-                st.session_state.current_view_topic = h_topic
+                st.session_state.current_view_blog = normalize_markdown_math(blog.get("content", ""))
+                st.session_state.current_view_topic = blog.get("topic", "")
+                st.session_state.current_view_title = h_title
+                st.session_state.current_view_thread_id = blog["thread_id"]
 
 if st.session_state.get("viewing_history", False):
     h_topic = st.session_state.get("current_view_topic", "Previous Blog")
+    h_title = st.session_state.get("current_view_title", h_topic)
     h_final = normalize_markdown_math(st.session_state.get("current_view_blog", ""))
     
-    st.subheader(f"📚 {h_topic}")
+    st.subheader(f"📚 {h_title}")
+    st.caption(f"Topic: {h_topic} · Thread ID: {st.session_state.get('current_view_thread_id', '')}")
     st.markdown(h_final)
     st.download_button(
         label="⬇️ Download Markdown File",
         data=h_final,
-        file_name=f"{h_topic.replace(' ', '_').lower()}.md",
+        file_name=f"{h_title.replace(' ', '_').lower()}.md",
         mime="text/markdown"
     )
     st.stop()

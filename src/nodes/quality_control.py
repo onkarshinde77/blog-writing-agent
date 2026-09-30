@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.markdown_math import normalize_markdown_math
+from src.blog_history import save_state_blog
 from src.schemas import State
 
 log = logging.getLogger(__name__)
@@ -220,6 +221,7 @@ ARTICLE:
     if isinstance(revised, list):
         revised = "\n".join(str(item) for item in revised)
     revised = normalize_markdown_math(str(revised)).strip()
+    save_state_blog({**state, "final": revised}, status="quality_revised")
     plan = _plain(state.get("plan"))
     title = plan.get("blog_title") if isinstance(plan, dict) else getattr(plan, "blog_title", state.get("topic", "blog"))
     Path(f"{title or state.get('topic', 'blog')}.md").write_text(revised + "\n", encoding="utf-8")

@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from src.schemas import State
 from src.markdown_math import normalize_markdown_math
+from src.blog_history import save_state_blog
 from src.publishing.adapters import publish_devto, publish_wordpress, publish_linkedin
 
 log = logging.getLogger(__name__)
@@ -88,7 +89,9 @@ def revise_node(state: State) -> dict:
     revised = _llm().invoke([SystemMessage(content="You are an editor revising a blog for its intended reader. Preserve equations in Markdown math when they are relevant: `$...$` inline and `$$...$$` on separate lines for display equations."), HumanMessage(content=prompt)]).content
     if isinstance(revised, list): revised = "\n".join(str(item) for item in revised)
     revised = normalize_markdown_math(str(revised))
-    return {"final": revised, "blog_plan": {**blog, "content": revised}, "human_blog_decision": None}
+    updated_blog = {**blog, "content": revised}
+    save_state_blog({**state, "final": revised, "blog_plan": updated_blog}, status="edited")
+    return {"final": revised, "blog_plan": updated_blog, "human_blog_decision": None}
 
 
 def route_blog_approval(state: State):
@@ -183,6 +186,8 @@ def final_result_node(state: State) -> dict:
     if linkedin.get("status") == "failed": failed.append("linkedin")
     quality_report = state.get("quality_report") or {}
     blog_status = "quality_failed" if quality_report.get("status") == "failed" else ("approved" if approved else "rejected")
+    if state.get("workflow_id"):
+        save_state_blog({**state, "blog_plan": blog, "final": state.get("final") or blog.get("content", "")}, status=blog_status)
     result = {"blog": {"title": blog.get("title", ""), "status": blog_status},
               "platforms": {p: {"status": item.get("status", "not_published"), "url": item.get("url"), "error": item.get("error")} for p,item in platforms.items()},
               "linkedin": {"status": linkedin.get("status", "not_published"), "url": linkedin.get("url"), "error": linkedin.get("error")},
