@@ -10,6 +10,19 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.config import CONFIG
 from src.graph import app
+from src.markdown_math import normalize_markdown_math
+
+
+def _find_exception_type(error, names):
+    """Walk wrapped errors so provider failures get useful UI guidance."""
+    seen = set()
+    current = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in names:
+            return type(current).__name__
+        current = current.__cause__ or current.__context__
+    return None
 
 
 # ============================================================================
@@ -116,12 +129,12 @@ with st.sidebar:
             
             if st.button(f"💬 {short_topic}", key=f"hist_btn_{idx}_{state.config.get('configurable', {}).get('checkpoint_id', idx)}", use_container_width=True):
                 st.session_state.viewing_history = True
-                st.session_state.current_view_blog = state.values.get("final", "")
+                st.session_state.current_view_blog = normalize_markdown_math(state.values.get("final", ""))
                 st.session_state.current_view_topic = h_topic
 
 if st.session_state.get("viewing_history", False):
     h_topic = st.session_state.get("current_view_topic", "Previous Blog")
-    h_final = st.session_state.get("current_view_blog", "")
+    h_final = normalize_markdown_math(st.session_state.get("current_view_blog", ""))
     
     st.subheader(f"📚 {h_topic}")
     st.markdown(h_final)
@@ -147,6 +160,7 @@ if st.button("Generate Blog Post", type="primary"):
         ui_nodes = {
             "router": {"label": "Analyzing topic & routing", "icon": "🧭"},
             "research": {"label": "Researching web for evidence", "icon": "🔍"},
+            "topic_analysis": {"label": "Analyzing topic & audience", "icon": "👥"},
             "orchestrator": {"label": "Orchestrating blog plan", "icon": "📋"},
             "workers": {"label": "Workers writing sections", "icon": "✍️"},
             "reducer": {"label": "Compiling final blog", "icon": "✨"}
@@ -171,6 +185,10 @@ if st.button("Generate Blog Post", type="primary"):
         
         final_blog_container = st.container()
         
+        import uuid
+        current_thread_id = str(uuid.uuid4())
+        run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
+
         initial_state = {
             "topic": topic_input,
             "mode": "",
@@ -180,7 +198,7 @@ if st.button("Generate Blog Post", type="primary"):
             "plan": None,
             "sections": [],
             "final": "",
-            "workflow_id": thread_id,
+            "workflow_id": current_thread_id,
         }
         
         try:
@@ -191,10 +209,6 @@ if st.button("Generate Blog Post", type="primary"):
             containers["router"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['router']['icon']} {ui_nodes['router']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
             progress_bar.progress(5)
             
-            import uuid
-            current_thread_id = str(uuid.uuid4())
-            run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
-            initial_state["workflow_id"] = current_thread_id
             st.session_state.active_workflow_id = current_thread_id
             
             # Using langgraph stream to get real-time updates from nodes
@@ -215,13 +229,18 @@ if st.button("Generate Blog Post", type="primary"):
                         else:
                             append_log("Router decided research is NOT needed.")
                             containers["research"].markdown(f"<div class='node-box'>⏭️ &nbsp; **{ui_nodes['research']['icon']} {ui_nodes['research']['label']}** - <span class='status-skipped'>Skipped (Not needed)</span></div>", unsafe_allow_html=True)
-                            containers["orchestrator"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['orchestrator']['icon']} {ui_nodes['orchestrator']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+                            containers["topic_analysis"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
                             
                     elif node_name == "research":
                         progress_bar.progress(40)
                         found = len(value.get('evidence', []))
                         containers["research"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['research']['icon']} {ui_nodes['research']['label']}** - <span class='status-completed'>Completed (Found {found} items)</span></div>", unsafe_allow_html=True)
-                        # Research is followed by orchestrator
+                        # Research is followed by topic and audience analysis.
+                        containers["topic_analysis"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+
+                    elif node_name == "topic_analysis":
+                        progress_bar.progress(50)
+                        containers["topic_analysis"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
                         containers["orchestrator"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['orchestrator']['icon']} {ui_nodes['orchestrator']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
                             
                     elif node_name == "orchestrator":
@@ -248,7 +267,7 @@ if st.button("Generate Blog Post", type="primary"):
                  st.session_state.active_workflow_id = current_thread_id
                  st.info("Blog generated. Continue in the approval dashboard below.")
             elif final_state:
-                final_content = final_state.get("final", "")
+                final_content = normalize_markdown_math(final_state.get("final", ""))
                 with final_blog_container:
                     st.success("🎉 Blog generation completed successfully!")
                     st.markdown("---")
@@ -266,6 +285,15 @@ if st.button("Generate Blog Post", type="primary"):
 
         except Exception as e:
             st.error(f"An error occurred during workflow execution: {str(e)}")
+            provider_error = _find_exception_type(e, {"APIConnectionError", "APITimeoutError"})
+            if provider_error:
+                st.warning(
+                    "The app could not reach the Groq API after automatic retries. "
+                    "Check that your internet connection is available, api.groq.com "
+                    "is reachable over HTTPS (port 443), and any VPN or proxy settings "
+                    "are correct. Then retry generation. This error is usually a network "
+                    "or proxy issue, rather than a problem with the blog topic."
+                )
             import traceback
             st.code(traceback.format_exc())
 
@@ -292,8 +320,15 @@ if active_id:
             st.divider()
             if pending.get("type") == "blog_review":
                 st.subheader("Blog review")
+                quality_gate = pending.get("quality_gate") or {}
+                st.success("Final quality gate passed")
+                with st.expander("Topic & audience analysis", expanded=False):
+                    st.json(pending.get("topic_analysis") or {})
+                with st.expander("Quality-control report", expanded=False):
+                    st.json(quality_gate)
                 st.json(pending.get("review") or {})
-                current_blog = pending.get("blog") or {}
+                current_blog = dict(pending.get("blog") or {})
+                current_blog["content"] = normalize_markdown_math(current_blog.get("content", ""))
                 edited_title = st.text_input("Title", current_blog.get("title", ""), key="approval_title")
                 edited_content = st.text_area("Approved blog (Markdown)", current_blog.get("content", ""), height=350, key="approval_content")
                 c1, c2, c3 = st.columns(3)
@@ -303,7 +338,7 @@ if active_id:
                     revise_blog = st.button("Revise", key="revise_blog")
                 with c3:
                     reject_blog = st.button("Reject", key="reject_blog")
-                platforms = st.multiselect("Publish to", ["wordpress", "devto", "ghost"], default=["wordpress", "devto", "ghost"], format_func=lambda p: {"wordpress": "WordPress.com", "devto": "DEV.to", "ghost": "Ghost"}[p])
+                platforms = st.multiselect("Publish to", ["wordpress", "devto"], default=["wordpress", "devto"], format_func=lambda p: {"wordpress": "WordPress.com", "devto": "DEV.to"}[p])
                 feedback = st.text_input("Revision notes", key="blog_feedback")
                 if approve_blog:
                     app.invoke(Command(resume={"action": "approve", "platforms": platforms}), config=active_config)
@@ -338,7 +373,7 @@ if active_id:
                         st.rerun()
         elif snapshot.values.get("final"):
             st.subheader("Publishing results")
-            st.markdown(snapshot.values.get("final", ""))
+            st.markdown(normalize_markdown_math(snapshot.values.get("final", "")))
             result = snapshot.values.get("final_result") or {"platforms": snapshot.values.get("published_links", {}), "linkedin": snapshot.values.get("linkedin_result"), "successful_urls": snapshot.values.get("all_published_urls", []), "failed_platforms": snapshot.values.get("failed_platforms", [])}
             st.json(result)
             st.text_area("Copy all links", "\n".join(result.get("successful_urls", [])), height=90, key="published_links_copy")

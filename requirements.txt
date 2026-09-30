@@ -2,6 +2,7 @@ langchain
 langchain-community
 langchain-core
 langchain-groq
+langchain-google-genai
 langchain-tavily
 langgraph
 langgraph-checkpoint
@@ -15,9 +16,7 @@ groq
 langchain-groq
 markdown
 bleach
-PyJWT
 cryptography
 fastapi
 uvicorn[standard]
-psycopg[binary,pool]
-langgraph-checkpoint-postgres
+langgraph-checkpoint-sqlite

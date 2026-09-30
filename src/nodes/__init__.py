@@ -4,6 +4,7 @@ Exports all node functions for graph assembly.
 """
 from src.nodes.router import router_node, route_next
 from src.nodes.research import research_node
+from src.nodes.topic_analysis import topic_analysis_node
 from src.nodes.orchestrator import orchestrator
 from src.nodes.workers import fanout, workers
 from src.nodes.reducer import reducer_node
@@ -12,6 +13,7 @@ __all__ = [
     "router_node",
     "route_next",
     "research_node",
+    "topic_analysis_node",
     "orchestrator",
     "fanout",
     "workers",

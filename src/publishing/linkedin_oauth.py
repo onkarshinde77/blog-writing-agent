@@ -6,6 +6,7 @@ import os
 import secrets
 import sqlite3
 import time
+from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
@@ -16,7 +17,10 @@ from fastapi.responses import RedirectResponse
 
 router = APIRouter(prefix="/auth/linkedin", tags=["linkedin-oauth"])
 _basic = HTTPBasic()
-DB_PATH = os.getenv("PUBLISHING_DB_PATH", "publishing.db")
+DB_PATH = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
+if not DB_PATH.is_absolute():
+    DB_PATH = Path(__file__).resolve().parents[2] / DB_PATH
+DB_PATH = str(DB_PATH)
 
 
 def _require_auth(credentials: HTTPBasicCredentials = Depends(_basic)):
@@ -71,7 +75,7 @@ def linkedin_callback(request: Request, code: str, state: str):
     if not subject: raise HTTPException(502, "LinkedIn member identity was not returned")
     f = _fernet()
     with sqlite3.connect(DB_PATH) as db:
-        db.execute("INSERT OR REPLACE INTO oauth_tokens VALUES (?,?,?,?,?)", ("linkedin", f.encrypt(token["access_token"].encode()), time.time()+int(token.get("expires_in", 0)), f.encrypt(token["refresh_token"].encode()) if token.get("refresh_token") else None, f"urn:li:person:{subject}"))
+        db.execute("INSERT OR REPLACE INTO oauth_tokens (account,token_ciphertext,expires_at,refresh_ciphertext,author_urn) VALUES (?,?,?,?,?)", ("linkedin", f.encrypt(token["access_token"].encode()), time.time()+int(token.get("expires_in", 0)), f.encrypt(token["refresh_token"].encode()) if token.get("refresh_token") else None, f"urn:li:person:{subject}"))
     # Author URN is returned to the backend session; token itself is never returned to a browser.
     return {"connected": True, "author_urn": f"urn:li:person:{subject}"}
 
@@ -148,5 +152,5 @@ def get_wordpress_token() -> str | None:
 def get_wordpress_site_id() -> str | None:
     _db()
     with sqlite3.connect(DB_PATH) as db:
-        row = db.execute("SELECT site_id FROM oauth_tokens WHERE account='wordpress'").fetchone()
-    return (row[0] if row else None) or os.getenv("WORDPRESS_SITE_ID")
+        row = db.execute("SELECT site_id,site_url FROM oauth_tokens WHERE account='wordpress'").fetchone()
+    return (row[0] if row else None) or (row[1] if row else None) or os.getenv("WORDPRESS_SITE_ID") or os.getenv("WORDPRESS_SITE_URL")

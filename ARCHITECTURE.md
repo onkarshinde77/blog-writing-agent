@@ -58,7 +58,17 @@ START
                 ↓
          [reducer_node] → Combine sections into final blog
                 ↓
-              END
+       [quality_check] → Audit completeness, evidence, claims, labels, math, and units
+          ↓       ↑
+     [research]  [quality_revision] (at most two edits, each followed by another audit)
+          ↓       ↑
+          └───────┘
+                ↓ pass
+            [review]
+                ↓
+        [human approval]
+                ↓
+     Existing publishing flow
 
 
 Key Components:

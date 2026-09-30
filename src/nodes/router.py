@@ -31,4 +31,4 @@ def router_node(state: State) -> Dict:
 
 # Conditional Edge Function
 def route_next(state: State) -> str:
-    return "research" if state['needs_research'] else "orchestrator"
+    return "research" if state['needs_research'] else "topic_analysis"

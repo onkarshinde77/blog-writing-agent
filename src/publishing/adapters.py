@@ -9,6 +9,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -62,7 +63,10 @@ def _meta(blog: dict) -> dict:
 
 
 def _idempotency_db() -> str:
-    return os.getenv("PUBLISHING_DB_PATH", "publishing.db")
+    path = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[2] / path
+    return str(path)
 
 
 def _init_db():
@@ -122,33 +126,6 @@ def publish_devto(blog: dict, workflow_id: str) -> dict:
         if not payload.get("url"): raise RuntimeError("invalid_api_response")
         return payload.get("id"), payload["url"]
     return _publish_once("devto", workflow_id, blog, send)
-
-
-def _ghost_token(key: str) -> str:
-    import jwt
-    kid, secret = key.split(":", 1)
-    now = int(time.time())
-    return jwt.encode({"iat": now, "exp": now + 300, "aud": "/admin/"}, bytes.fromhex(secret), algorithm="HS256", headers={"kid": kid})
-
-
-def publish_ghost(blog: dict, workflow_id: str) -> dict:
-    def send(data):
-        base, key = os.getenv("GHOST_URL", "").rstrip("/"), os.getenv("GHOST_ADMIN_API_KEY", "")
-        if not base or not key: raise RuntimeError("missing_credentials")
-        _safe_url(base)
-        from markdown import markdown
-        html = markdown(data["content"], extensions=["tables", "fenced_code"])
-        html = bleach.clean(html, tags={"p", "br", "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "pre", "code", "strong", "em", "del", "a", "hr", "table", "thead", "tbody", "tr", "th", "td"}, attributes={"a": ["href", "title"]}, protocols=["http", "https", "mailto"], strip=True)
-        post = {"title": data["title"], "html": html, "status": "published" if os.getenv("GHOST_PUBLISH_STATUS", "published").lower() == "published" else "draft"}
-        if data["description"]: post["custom_excerpt"] = data["description"]
-        if data["cover_image"]: post["feature_image"] = _safe_url(data["cover_image"])
-        if data["canonical_url"]: post["canonical_url"] = _safe_url(data["canonical_url"])
-        url = f"{base}/ghost/api/admin/posts/?source=html"
-        payload = _request("POST", url, headers={"Authorization": f"Ghost {_ghost_token(key)}", "Accept-Version": "v5.0"}, json_body={"posts": [post]}).json()
-        created = payload.get("posts", [{}])[0]
-        if not created.get("url"): raise RuntimeError("invalid_api_response")
-        return created.get("id"), created["url"]
-    return _publish_once("ghost", workflow_id, blog, send)
 
 
 def publish_linkedin(text: str, author: str | None = None, workflow_id: str | None = None) -> dict:

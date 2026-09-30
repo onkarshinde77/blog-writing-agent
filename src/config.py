@@ -13,26 +13,20 @@ load_dotenv()
 # Streamlit secrets fallback for deployment
 groq_key = st.secrets.get("GROQ_API_KEY", os.getenv("GROQ_API_KEY"))
 tavily_key = st.secrets.get("TAVILY_API_KEY", os.getenv("TAVILY_API_KEY"))
-gemini_key = os.getenv("GEMINI_API_KEY")
 
-# if tavily_key:
-#     os.environ["TAVILY_API_KEY"] = tavily_key
+if tavily_key:
+    os.environ["TAVILY_API_KEY"] = tavily_key
 
-# # LLM Configuration
-# model = ChatGroq(
-#     model="openai/gpt-oss-20b",
-#     temperature=0.3,
-#     api_key=groq_key
-# )
-
-if not gemini_key:
-    raise ValueError("GEMINI_API_KEY is not set.")
-
-model = ChatGoogleGenerativeAI(
-    model="gemini-3.8-flash",
+# LLM Configuration
+model = ChatGroq(
+    model="openai/gpt-oss-20b",
     temperature=0.3,
-    google_api_key=gemini_key
+    api_key=groq_key,
+    # Retry temporary DNS, socket, timeout, rate-limit, and upstream failures.
+    max_retries=5,
+    timeout=60,
 )
+
 # Application Configuration
 CONFIG = {
     "configurable": {"thread_id": "blog-1"},

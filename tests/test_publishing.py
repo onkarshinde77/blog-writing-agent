@@ -21,12 +21,12 @@ class PublishingWorkflowTests(unittest.TestCase):
         self.assertEqual(nodes.route_blog_approval({"human_blog_decision": {"action": "revise"}}), "revision")
 
     def test_human_blog_approval_routes_to_parallel_sends(self):
-        sends = nodes.route_blog_approval({"topic": "x", "final": "body", "human_blog_decision": {"action": "approve"}, "workflow_id": "run-1", "publish_platforms": ["wordpress", "ghost"]})
+        sends = nodes.route_blog_approval({"topic": "x", "final": "body", "human_blog_decision": {"action": "approve"}, "workflow_id": "run-1", "publish_platforms": ["wordpress", "devto"]})
         self.assertEqual([send.node for send in sends], ["publisher", "publisher"])
-        self.assertEqual({send.arg["platform"] for send in sends}, {"wordpress", "ghost"})
+        self.assertEqual({send.arg["platform"] for send in sends}, {"wordpress", "devto"})
 
     def test_each_platform_adapter_is_invoked_independently(self):
-        for platform in ("wordpress", "devto", "ghost"):
+        for platform in ("wordpress", "devto"):
             with self.subTest(platform=platform), patch.object(nodes, f"publish_{'devto' if platform == 'devto' else platform}", return_value={"platform": platform, "status": "published", "url": "https://example.com/post", "post_id": "1", "error": None}) as publisher:
                 result = nodes.publisher_task({"platform": platform, "blog": BLOG, "workflow_id": "run"})
                 publisher.assert_called_once()
@@ -96,13 +96,6 @@ class PublishingWorkflowTests(unittest.TestCase):
         article = request.call_args.kwargs["json_body"]["article"]
         self.assertTrue(article["published"])
         self.assertEqual(article["body_markdown"], BLOG["content"])
-
-    def test_ghost_api_adapter(self):
-        response = Mock()
-        response.json.return_value = {"posts": [{"id": "ghost-1", "url": "https://ghost.example.com/post"}]}
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"GHOST_URL": "https://ghost.example.com", "GHOST_ADMIN_API_KEY": "kid:" + "ab" * 32, "PUBLISHING_DB_PATH": os.path.join(tmp, "posts.db")}), patch.object(adapters, "_request", return_value=response):
-            result = adapters.publish_ghost(BLOG, "ghost-run")
-        self.assertEqual(result["post_id"], "ghost-1")
 
     def test_linkedin_posts_api_adapter(self):
         response = Mock()
