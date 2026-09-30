@@ -50,7 +50,7 @@ The result is a **production-quality blog post** saved to your screen with a one
 - 📋 **Structured Blog Planning** — Creates detailed section outlines with goals, bullets, and word count targets
 - ⚡ **Parallel Section Writing** — Worker agents write all sections simultaneously using LangGraph's fan-out pattern
 - 🕗 **Chat History Sidebar** — Browse all previously generated blogs in a clean sidebar (like ChatGPT)
-- 💾 **Persistent Checkpoints** — Uses SQLite-backed LangGraph checkpointing so history survives restarts
+- 💾 **Persistent Checkpoints** — Uses local SQLite-backed LangGraph checkpointing so history survives restarts
 - ⬇️ **Markdown Download** — One-click download of any generated blog as a `.md` file
 - 🔄 **Real-time Progress UI** — Live workflow progress indicators with node-by-node status updates
 
@@ -67,7 +67,7 @@ The result is a **production-quality blog post** saved to your screen with a one
 | [Streamlit](https://streamlit.io/) | Interactive web UI |
 | [Pydantic v2](https://docs.pydantic.dev/) | Structured data validation for agent state |
 | [LangSmith](https://smith.langchain.com/) | Complete agent observability and execution tracing |
-| [langgraph-checkpoint-sqlite](https://pypi.org/project/langgraph-checkpoint-sqlite/) | Persistent state storage via SQLite |
+| [langgraph-checkpoint-sqlite](https://pypi.org/project/langgraph-checkpoint-sqlite/) | Persistent state storage in a local SQLite file |
 | [Python Dotenv](https://pypi.org/project/python-dotenv/) | Secure API key management |
 
 ---
@@ -114,7 +114,7 @@ START
 
 After the reducer creates `final`, a quality gate checks section and sentence completeness, evidence and citations, unsupported claims, fact/forecast/assumption distinctions, arithmetic, and units. It can gather one supplemental source batch and make up to two automatic revisions, checking the article again after each change. Only a passing article reaches the existing review and human approval steps. A failed gate stops without exposing approval or starting publication. Human edits re-enter the quality gate. The existing WordPress.com and DEV.to publishing tasks and optional LinkedIn approval flow remain downstream and unchanged.
 
-The Streamlit dashboard displays the quality report alongside the review and approval controls, offers WordPress.com and DEV.to as publishing destinations, and shows saved publication outcomes and links. Each generation uses a UUID thread ID; use the same `configurable.thread_id` on every `Command(resume=...)` call. Locally, `DATABASE_URL=publishing.db` enables durable LangGraph SQLite checkpoints in the same file as publication idempotency and OAuth records.
+The Streamlit dashboard displays the quality report alongside the review and approval controls, offers WordPress.com and DEV.to as publishing destinations, and shows saved publication outcomes and links. Each generation uses a UUID thread ID; use the same `configurable.thread_id` on every `Command(resume=...)` call. Workflow checkpoints, publication idempotency, and OAuth records use the same local SQLite file, `publishing.db` by default.
 
 Adapters live in `src/publishing/adapters.py`; workflow nodes live in `src/publishing/nodes.py`. WordPress.com uses its REST create-post endpoint and DEV.to uses Forem `POST /api/articles`. LinkedIn remains an optional separate social sharing step after the blog destinations are handled. WordPress.com OAuth is handled in the backend OAuth service. API errors are reduced to safe status classifications; credentials and raw API bodies are not logged. Transient network, 429, and 5xx errors receive bounded retries. Permanent 4xx errors do not.
 
@@ -132,13 +132,13 @@ Copy `.env.example` to `.env` and fill only the services you intend to use. Neve
 | `LINKEDIN_REDIRECT_URI` | Registered backend callback URL served by `src.publishing.oauth_app`; it exposes `/auth/linkedin/connect` and `/auth/linkedin/callback`. |
 | `TOKEN_ENCRYPTION_KEY` | Fernet key to encrypt LinkedIn tokens at rest (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Store it in a secret manager. |
 | `PUBLISHING_WEB_USER`, `PUBLISHING_WEB_PASSWORD`, `PUBLISHING_UI_PASSWORD` | Set these to protect the OAuth router and Streamlit approval/publishing dashboard. |
-| `DATABASE_URL` | Local SQLite filename for durable LangGraph checkpoints; use `publishing.db`. |
+| `PUBLISHING_DB_PATH` | Local SQLite file for workflow checkpoints, publication idempotency, and OAuth tokens; defaults to `publishing.db`. |
 
 Set `PRIMARY_BLOG_PLATFORM` to `wordpress` or `devto`; if it fails, the first successfully published provider becomes LinkedIn's primary URL. `CANONICAL_URL` is an optional explicit canonical URL; it is not inferred. The WordPress.com create-post endpoint does not expose a general canonical URL field, so the adapter does not set one there.
 
 #### Local setup and OAuth
 
-On Windows, install Python 3.11 or newer, then run `py -m venv .venv`, `\.venv\Scripts\Activate.ps1`, and `python -m pip install -r requirements.txt`. Copy `.env.example` to `.env`, fill the Gemini/Tavily keys and the WordPress.com and/or DEV.to credentials, and leave `DATABASE_URL=publishing.db` and `PUBLISHING_DB_PATH=publishing.db`. Run the overall dashboard with `streamlit run main.py`. For WordPress.com OAuth, open a second terminal in the project, activate `.venv`, and run `uvicorn src.publishing.oauth_app:app --host 127.0.0.1 --port 8000`. Register the exact `WORDPRESS_REDIRECT_URI` callback at `/auth/wordpress/callback`, then visit `http://127.0.0.1:8000/auth/wordpress/connect` to authorize. OAuth routes require HTTP Basic credentials from `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD`. Generate `TOKEN_ENCRYPTION_KEY` with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and paste the output into `.env` before OAuth. Tokens are encrypted in the publishing SQLite database. WordPress.com and DEV.to posts are published after blog approval; LinkedIn has a separate optional approval step.
+On Windows, install Python 3.11 or newer, then run `py -m venv .venv`, `\.venv\Scripts\Activate.ps1`, and `python -m pip install -r requirements.txt`. Copy `.env.example` to `.env`, fill the Gemini/Tavily keys and the WordPress.com and/or DEV.to credentials, and keep `PUBLISHING_DB_PATH=publishing.db` for local persistence. Run the overall dashboard with `streamlit run main.py`. For WordPress.com OAuth, open a second terminal in the project, activate `.venv`, and run `uvicorn src.publishing.oauth_app:app --host 127.0.0.1 --port 8000`. Register the exact `WORDPRESS_REDIRECT_URI` callback at `/auth/wordpress/callback`, then visit `http://127.0.0.1:8000/auth/wordpress/connect` to authorize. OAuth routes require HTTP Basic credentials from `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD`. Generate `TOKEN_ENCRYPTION_KEY` with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and paste the output into `.env` before OAuth. Tokens are encrypted in the local SQLite database. WordPress.com and DEV.to posts are published after blog approval; LinkedIn has a separate optional approval step.
 
 #### Operational notes and limitations
 
@@ -241,7 +241,7 @@ blog-writing-agent/
 ├── main.py                  # Streamlit UI + entry point
 ├── requirements.txt
 ├── .env                     # API keys (not committed)
-├── checkpoints.db           # SQLite history (auto-created)
+├── publishing.db            # Local SQLite checkpoints, OAuth, and publishing ledger (auto-created)
 └── src/
     ├── config.py            # LLM model + workflow config
     ├── graph/

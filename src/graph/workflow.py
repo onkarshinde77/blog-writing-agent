@@ -32,20 +32,16 @@ log = logging.getLogger(__name__)
 _checkpointer_manager = None
 
 def _checkpointer():
-    """Use a durable local SQLite checkpoint database when DATABASE_URL is set."""
+    """Use the project's local SQLite file for durable workflow checkpoints."""
     global _checkpointer_manager
-    dsn = os.getenv("DATABASE_URL")
-    if not dsn:
-        from langgraph.checkpoint.memory import MemorySaver
-        return MemorySaver()
-    if dsn.startswith("sqlite:///"):
-        dsn = dsn[len("sqlite:///"):]
-    if not os.path.isabs(dsn):
-        dsn = str(Path(__file__).resolve().parents[2] / dsn)
+    db_path = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
+    if not db_path.is_absolute():
+        db_path = Path(__file__).resolve().parents[2] / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-    connection = sqlite3.connect(dsn, check_same_thread=False)
+    connection = sqlite3.connect(str(db_path), check_same_thread=False)
     _checkpointer_manager = connection
     saver = SqliteSaver(connection, serde=JsonPlusSerializer(allowed_msgpack_modules=[Plan, Task, EvidenceItem]))
     saver.setup()
