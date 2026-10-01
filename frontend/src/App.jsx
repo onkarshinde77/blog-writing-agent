@@ -3,13 +3,11 @@ import { ArrowRight, BookOpen, Check, CircleHelp, LoaderCircle, LockKeyhole, Men
 import { api, base } from "./api.js";
 
 const MarkdownRenderer = lazy(() => import("./Markdown.jsx"));
-const AUDIENCES = ["General readers", "Beginners", "Industry professionals", "Leaders and decision makers", "Students"];
-const TONES = ["Clear and conversational", "Professional", "Warm and practical", "Analytical", "Persuasive", "Story-led"];
 const LENGTHS = ["Short · about 600 words", "Standard · about 1,000 words", "In-depth · about 1,600 words"];
 const cx = (...items) => items.filter(Boolean).join(" ");
 const titleOf = (blog) => blog?.title || blog?.topic || "Untitled article";
 const pretty = (value) => (value || "draft").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const modelLabel = (id, options) => options.find((item) => item.id === id)?.label || (id === "gemma3:4b" ? "Gemma 3 · 4B" : "Qwen 3.5 · 4B");
+const modelLabel = (id, options) => options.find((item) => item.id === id)?.label || id || "Qwen 3.5 · 4B";
 
 function SignIn({ onLogin }) {
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
@@ -24,7 +22,7 @@ export default function App() {
   const [modelName, setModelName] = useState(() => window.localStorage.getItem("onkar-editorial-model") || "");
   const [apiOnline, setApiOnline] = useState(false); const [workflowId, setWorkflowId] = useState(""); const [workflow, setWorkflow] = useState(null);
   const [selected, setSelected] = useState(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(true); const [mobileSidebar, setMobileSidebar] = useState(false); const [events, setEvents] = useState([]); const [deleting, setDeleting] = useState("");
-  const [topic, setTopic] = useState(""); const [audience, setAudience] = useState(AUDIENCES[0]); const [customAudience, setCustomAudience] = useState(""); const [tone, setTone] = useState(TONES[0]); const [length, setLength] = useState(LENGTHS[1]); const [submitting, setSubmitting] = useState(false); const [acting, setActing] = useState(false);
+  const [topic, setTopic] = useState(""); const [length, setLength] = useState(LENGTHS[1]); const [submitting, setSubmitting] = useState(false); const [acting, setActing] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -53,7 +51,7 @@ export default function App() {
     event.preventDefault(); if (topic.trim().length < 3 || submitting) return;
     setSubmitting(true); setError(""); setSelected(null); setWorkflowId(""); setWorkflow(null); setEvents([]);
     const prompt = topic.trim();
-    try { const selectedModel = modelName || "qwen3.5:4b"; const result = await api.createWorkflow({ topic: prompt, audience: audience === "Custom audience" ? customAudience.trim() : audience, tone, length, model_name: selectedModel }); setWorkflowId(result.workflow_id); setEvents([{ id: `prompt-${Date.now()}`, role: "user", text: prompt, model_name: selectedModel }]); setTopic(""); await refresh(); }
+    try { const selectedModel = modelName || "qwen3.5:4b"; const result = await api.createWorkflow({ topic: prompt, length, model_name: selectedModel }); setWorkflowId(result.workflow_id); setEvents([{ id: `prompt-${Date.now()}`, role: "user", text: prompt, model_name: selectedModel }]); setTopic(""); await refresh(); }
     catch (problem) { setError(problem.message); }
     finally { setSubmitting(false); }
   }
@@ -93,9 +91,11 @@ export default function App() {
   const canPublish = (selectedPlatforms || []).length > 0 && (selectedPlatforms || []).every((platform) => destinations[platform]?.connected);
   const canPublishLinkedIn = Boolean(destinations.linkedin?.connected);
   const chosenModel = modelOptions.find((item) => item.id === modelName);
-  const modelReady = ollamaOnline && chosenModel?.installed !== false;
+  // The model list can report a tag variant differently from the requested
+  // alias. Only block submission when the Ollama service itself is offline.
+  const modelReady = ollamaOnline;
   const modelHint = !ollamaOnline ? "Start Ollama to generate with a local model."
-    : chosenModel?.installed === false ? `Run ollama pull ${modelName} to install this model.`
+    : chosenModel?.installed === false ? `Ollama is online, but did not match the “${modelName}” tag exactly. Sending is enabled; check OLLAMA_BASE_URL if generation fails.`
       : "Local model used for planning, thinking, writing, and review.";
   useEffect(() => {
     if (!workflowId || !workflow) return;
@@ -143,7 +143,7 @@ export default function App() {
           {workflow?.status === "failed" && !article && <div className="agent-message"><span className="agent-avatar failed"><CircleHelp size={14} /></span><div><div className="agent-name">ONKAR AI</div><div className="agent-copy failed">{workflow.error || "Workflow stopped. Please try again."}</div></div></div>}
         </div>
       </div>
-      {!selected && <div className="composer-wrap"><form className="composer" onSubmit={generate}><label className="composer-topic-label" htmlFor="topic">Your idea</label><textarea id="topic" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Describe the blog you want to create…" minLength={3} maxLength={2000} required /><div className="composer-controls"><div className="composer-options"><label><span>For</span><select value={audience} onChange={(event) => setAudience(event.target.value)}>{AUDIENCES.map((item) => <option key={item}>{item}</option>)}<option>Custom audience</option></select></label>{audience === "Custom audience" && <input className="custom-audience" value={customAudience} onChange={(event) => setCustomAudience(event.target.value)} placeholder="Describe the audience" />}<label><span>Tone</span><select value={tone} onChange={(event) => setTone(event.target.value)}>{TONES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Length</span><select value={length} onChange={(event) => setLength(event.target.value)}>{LENGTHS.map((item) => <option key={item}>{item}</option>)}</select></label><label title="Used for planning, thinking, drafting, and review"><span>Model</span><select className="model-select" value={modelName || "qwen3.5:4b"} onChange={(event) => setModelName(event.target.value)} aria-label="Choose AI model">{(modelOptions.length ? modelOptions : [{ id: "qwen3.5:4b", label: "Qwen 3.5 · 4B" }, { id: "gemma3:4b", label: "Gemma 3 · 4B" }]).map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label></div><button className="send-button" aria-label="Generate blog" disabled={submitting || topic.trim().length < 3 || !modelReady}>{submitting ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={17} />}</button></div><div className="composer-hint"><LockKeyhole size={12} />{modelHint}</div></form></div>}
+      {!selected && <div className="composer-wrap"><form className="composer" onSubmit={generate}><label className="composer-topic-label" htmlFor="topic">Your idea</label><textarea id="topic" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Describe the blog you want to create…" minLength={3} maxLength={2000} required /><div className="composer-controls"><div className="composer-options"><label title="Choose the article depth"><span>Length</span><select value={length} onChange={(event) => setLength(event.target.value)}>{LENGTHS.map((item) => <option key={item}>{item}</option>)}</select></label><label title="Used for planning, thinking, drafting, and review"><span>Model</span><select className="model-select" value={modelName || "qwen3.5:4b"} onChange={(event) => setModelName(event.target.value)} aria-label="Choose AI model">{(modelOptions.length ? modelOptions : [{ id: "qwen3.5:4b", label: "Qwen 3.5 · 4B" }, { id: "gemma3:4b", label: "Gemma 3 · 4B" }]).map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label></div><button className="send-button" aria-label="Generate blog" disabled={submitting || topic.trim().length < 3 || !modelReady}>{submitting ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={17} />}</button></div><div className="composer-hint"><LockKeyhole size={12} />{modelHint}</div></form></div>}
       <footer className="chat-footer"><span>ONKAR AI can make mistakes. Review important details.</span></footer>
     </main>
     {auth.required && !auth.authenticated && <SignIn onLogin={async (password) => { await api.login(password); setAuth((old) => ({ ...old, authenticated: true })); }} />}

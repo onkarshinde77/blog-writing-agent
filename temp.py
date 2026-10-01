@@ -536,3 +536,28 @@
 # if __name__ == "__main__":
 #     main()
 
+from langchain_ollama import ChatOllama
+
+
+def test_ollama():
+    print("[1] Connecting to Ollama...")
+
+    llm = ChatOllama(
+        model="qwen3.5:4b",
+        base_url="http://127.0.0.1:11434",
+        temperature=0.3,
+    )
+
+    print("[2] Sending request...")
+
+    response = llm.invoke(
+        "Explain what XGBoost is in simple language in 5 sentences."
+    )
+
+    print("\n[3] Response:")
+    print(response.content)
+    print("\n[PASS] Ollama test successful.")
+
+
+if __name__ == "__main__":
+    test_ollama()

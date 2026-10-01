@@ -7,14 +7,14 @@ from langchain_ollama import ChatOllama
 load_dotenv()
 
 MODEL_OPTIONS = {
-    "qwen3.5:4b": "Qwen 3.5 · 4B",
-    "gemma3:4b": "Gemma 3 · 4B",
+    "qwen3.5:4b": "qwen3.5:4b",
+    "qwen3:1.7b": "qwen3:1.7b",
 }
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
 if DEFAULT_MODEL not in MODEL_OPTIONS:
     DEFAULT_MODEL = "qwen3.5:4b"
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 
 
 @lru_cache(maxsize=len(MODEL_OPTIONS))

@@ -56,10 +56,8 @@ app.include_router(oauth_router)
 
 class BlogRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=2000)
-    audience: str = Field(default="General readers", max_length=240)
-    tone: str = Field(default="Clear and conversational", max_length=120)
     length: str = Field(default="Standard · about 1,000 words", max_length=120)
-    model_name: Literal["qwen3.5:4b", "gemma3:4b"] = DEFAULT_MODEL
+    model_name: Literal["qwen3.5:4b", "qwen3:1.7b"] = DEFAULT_MODEL
 
 
 class ActionRequest(BaseModel):
@@ -355,8 +353,9 @@ def remove_blog(workflow_id: str) -> dict[str, bool]:
 def create_workflow(body: BlogRequest) -> dict[str, str]:
     workflow_id = str(uuid.uuid4())
     editorial_brief = (
-        f"{body.topic.strip()}\n\nEditorial brief: Write for {body.audience.strip() or 'general readers'}. "
-        f"Use a {body.tone.strip() or 'clear and conversational'} tone. Target {body.length.strip() or 'about 1,000 words'}. "
+        f"{body.topic.strip()}\n\nEditorial brief: Infer the intended audience from the topic and explain ideas at the right level for those readers. "
+        "Choose a natural tone that fits the topic and audience. "
+        f"Target {body.length.strip() or 'about 1,000 words'}. "
         "Keep the format natural to the topic; do not force a technical format."
     )
     initial = {

@@ -48,7 +48,7 @@ ollama pull qwen3.5:4b
 ollama pull gemma3:4b
 ```
 
-The studio model selector chooses which local model handles planning, reasoning, writing, and review. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; `OLLAMA_MODEL` sets the default selection. `TAVILY_API_KEY` is optional and is only needed when the agent performs web research. Ollama, research, and publishing credentials stay on the backend. Keep `.env` private.
+The studio model selector chooses which local model handles planning, reasoning, writing, and review. `OLLAMA_BASE_URL` defaults to `http://127.0.0.1:11434`; `OLLAMA_MODEL` sets the default selection. `TAVILY_API_KEY` is optional and is only needed when the agent performs web research. Ollama, research, and publishing credentials stay on the backend. Keep `.env` private.
 
 ## Production build
 

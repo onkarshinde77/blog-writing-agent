@@ -10,7 +10,14 @@ async function request(path, options = {}) {
     let message = `Request failed (${response.status})`;
     try {
       const body = await response.json();
-      message = body.detail || message;
+      const detail = body.detail;
+      if (typeof detail === "string") message = detail;
+      else if (Array.isArray(detail)) {
+        message = detail.map((item) => {
+          const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body").join(" → ") : "Request";
+          return `${location ? `${location}: ` : ""}${item.msg || "Invalid value"}`;
+        }).join("; ") || message;
+      } else if (detail && typeof detail === "object") message = detail.message || JSON.stringify(detail);
     } catch { /* Keep the status message when the server returns no JSON. */ }
     throw new Error(message);
   }
