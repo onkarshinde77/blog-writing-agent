@@ -4,15 +4,12 @@ Loads environment variables and initializes LLM model.
 """
 from __future__ import annotations
 import os
-import streamlit as st
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_google_genai import ChatGoogleGenerativeAI
 load_dotenv()
 
-# Streamlit secrets fallback for deployment
-groq_key = st.secrets.get("GROQ_API_KEY", os.getenv("GROQ_API_KEY"))
-tavily_key = st.secrets.get("TAVILY_API_KEY", os.getenv("TAVILY_API_KEY"))
+groq_key = os.getenv("GROQ_API_KEY")
+tavily_key = os.getenv("TAVILY_API_KEY")
 
 if tavily_key:
     os.environ["TAVILY_API_KEY"] = tavily_key

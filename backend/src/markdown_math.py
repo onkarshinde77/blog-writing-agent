@@ -1,4 +1,4 @@
-"""Normalize common model-produced LaTeX into Markdown math Streamlit can render."""
+"""Normalize common model-produced LaTeX into portable Markdown math."""
 from __future__ import annotations
 
 import re
@@ -9,10 +9,11 @@ _INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 _SQUARE_EQUATION = re.compile(r"(?m)^([ \t]*)\[\s*(.+?)\s*\]([ \t]*)$")
 _PAREN_MATH = re.compile(r"\(([^()\n]{1,240})\)")
 _DISPLAY_DOLLARS = re.compile(r"\$\$(.+?)\$\$", re.S)
+_ESCAPED_DOLLARS = re.compile(r"\\{1,2}\$(?!\$)([^$\n]{1,1200}?)\\{1,2}\$(?!\$)")
 _DISPLAY_BRACKETS = re.compile(r"\\{1,2}\[([\s\S]+?)\\{1,2}\]")
 _INLINE_LATEX = re.compile(r"\\{1,2}\(([\s\S]+?)\\{1,2}\)")
 _BARE_LATEX_LINE = re.compile(
-    r"(?m)^([ \t]*)(?=.*\\(?:frac|sum|prod|math[a-zA-Z]*|partial|sqrt|begin)\b)(.+?)([ \t]*)$"
+    r"(?m)^([ \t]*)(?=.*\\[A-Za-z]+)(?=.*(?:=|[_^]))(.+?)([ \t]*)$"
 )
 
 
@@ -37,9 +38,19 @@ def _normalize_plain_markdown(text: str) -> str:
 
     text = _INLINE_CODE.sub(hold_code, text)
 
+    def escaped_dollars(match: re.Match[str]) -> str:
+        expression = match.group(1).strip().replace(r"\\", "\\")
+        if _is_math_expression(expression):
+            return f"${expression}$"
+        return match.group(0)
+
+    # Some model responses escape math delimiters as `\$...\$`, which
+    # prevents remark-math from recognizing them as equations.
+    text = _ESCAPED_DOLLARS.sub(escaped_dollars, text)
+
     # A model may emit either one or two backslashes before TeX delimiters.
-    # Streamlit requires display-math $$ delimiters to be on their own lines,
-    # so normalize even when the model puts an equation on a prose line.
+    # Keep display-math $$ delimiters on their own lines, even when the model
+    # puts an equation on a prose line.
     def display_block(match: re.Match[str]) -> str:
         expression = match.group(1).strip().replace(r"\\", "\\")
         return f"\n\n$$\n{expression}\n$$\n\n"

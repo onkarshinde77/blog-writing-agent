@@ -36,7 +36,7 @@ def _checkpointer():
     global _checkpointer_manager
     db_path = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
     if not db_path.is_absolute():
-        db_path = Path(__file__).resolve().parents[2] / db_path
+        db_path = Path(__file__).resolve().parents[3] / db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
@@ -105,7 +105,9 @@ def build_graph():
             "review": "review",
             "quality_research": "quality_research",
             "quality_revision": "quality_revision",
-            "quality_failed": "finish",
+            # Exhausted automated retries still require an explicit human decision.
+            # The failed quality report is carried into review and remains visible.
+            "quality_failed": "review",
         },
     )
     graph.add_edge("quality_research", "quality_check")
@@ -133,9 +135,6 @@ def build_graph():
     return graph.compile(checkpointer=checkpointer)
 
 app = build_graph()
-graph = app.get_graph()
-output_path = Path(__file__).parent / "graph.png"
-graph.draw_mermaid_png(output_file_path=str(output_path))
 
 
 

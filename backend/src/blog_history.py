@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,9 @@ def database_path() -> Path:
     """Resolve the one local database path used throughout the application."""
     path = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
     if not path.is_absolute():
-        path = Path(__file__).resolve().parents[1] / path
+        # Keep relative database paths rooted at the repository after moving
+        # the Python package into backend/.
+        path = Path(__file__).resolve().parents[2] / path
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -40,7 +43,7 @@ def save_blog_history(
     if not thread_id:
         raise ValueError("A workflow thread ID is required to save blog history.")
     now = datetime.now(timezone.utc).isoformat()
-    with _connect() as db:
+    with closing(_connect()) as db, db:
         db.execute(
             """CREATE TABLE IF NOT EXISTS blog_history (
                 thread_id TEXT PRIMARY KEY,
@@ -68,7 +71,7 @@ def save_blog_history(
 
 def list_blog_history(limit: int = 200) -> list[dict[str, str]]:
     """Return saved blogs newest first, creating the empty table on first use."""
-    with _connect() as db:
+    with closing(_connect()) as db, db:
         db.execute(
             """CREATE TABLE IF NOT EXISTS blog_history (
                 thread_id TEXT PRIMARY KEY,
@@ -88,10 +91,17 @@ def list_blog_history(limit: int = 200) -> list[dict[str, str]]:
     return [dict(row) for row in rows]
 
 
+def delete_blog_history(thread_id: str) -> bool:
+    """Delete a saved article from the library without altering workflow checkpoints."""
+    with closing(_connect()) as db, db:
+        cursor = db.execute("DELETE FROM blog_history WHERE thread_id = ?", (str(thread_id),))
+    return cursor.rowcount > 0
+
+
 def recover_checkpoint_history(graph: Any) -> int:
     """Backfill older completed blogs from LangGraph checkpoints in this DB."""
     path = database_path()
-    with sqlite3.connect(str(path), timeout=10) as db:
+    with closing(sqlite3.connect(str(path), timeout=10)) as db, db:
         has_checkpoints = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='checkpoints'"
         ).fetchone()

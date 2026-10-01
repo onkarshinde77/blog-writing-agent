@@ -1,149 +1,42 @@
-"""
-Blog Writing Agent - Project Structure Guide
+# Architecture
 
-Project Structure:
-==================
-```bash
-blog-writing-agent/
-├── src/                          # Main source code
-│   ├── __init__.py              # Package initialization
-│   ├── config.py                # Configuration & LLM setup
-│   │
-│   ├── schemas/                 # Data models & schemas
-│   │   └── __init__.py          # All Pydantic models (Task, Plan, State, etc.)
-│   │
-│   ├── prompts/                 # System prompts
-│   │   └── __init__.py          # ROUTER_SYSTEM, RESEARCH_SYSTEM, ORCH_SYSTEM, WORKER_SYSTEM
-│   │
-│   ├── tools/                   # Utilities & tools
-│   │   └── __init__.py          # tavily_search() function
-│   │
-│   ├── nodes/                   # Workflow nodes
-│   │   ├── __init__.py          # Exports all node functions
-│   │   ├── router.py            # Route: decides if research needed
-│   │   ├── research.py          # Research node: performs web search
-│   │   ├── orchestrator.py      # Orchestrator: creates blog plan
-│   │   ├── workers.py           # Workers: generates individual sections (parallel)
-│   │   └── reducer.py           # Reducer: combines sections into final blog
-│   │
-│   └── graph/                   # Graph assembly
-│       ├── __init__.py          # Exports app
-│       └── workflow.py          # build_graph() - LangGraph assembly
-│
-├── main.py                      # Entry point - run() function
-├── 1_bwa_basic.ipynb           # Original notebook (for reference)
-├── .env                         # Environment variables (API keys)
-├── requirements.txt             # Python dependencies
-└── README.md                    # Project documentation
-
+```text
+Browser
+  └── React + Vite (frontend/)
+       ├── /api/*  ───────────────┐
+       └── /auth/*                 │
+                                   ▼
+                         FastAPI (backend/app/)
+                           ├── workflow job API
+                           ├── review and publish actions
+                           ├── existing OAuth router
+                           └── static frontend build in production
+                                   │
+                                   ▼
+                         LangGraph (backend/src/)
+                           ├── topic analysis and routing
+                           ├── conditional research
+                           ├── planning and writing
+                           ├── quality gate and review
+                           └── human approval and publishers
+                                   │
+                                   ▼
+                         SQLite checkpoints and history
 ```
-Workflow Architecture:
-======================
 
-START
-  ↓
-[router_node]  → Decide: is web research needed?
-  ↓
-  ├─→ YES → [research_node] → Search web for evidence
-  │            ↓
-  │     [orchestrator] → Create blog plan from evidence
-  │            ↓
-  │           ...
-  │
-  └─→ NO → [orchestrator] → Create blog plan (no research)
-                ↓
-         [fanout] → Distribute tasks to workers
-                ↓
-         [workers] → Generate sections in parallel (one per task)
-                ↓
-         [reducer_node] → Combine sections into final blog
-                ↓
-       [quality_check] → Audit completeness, evidence, claims, labels, math, and units
-          ↓       ↑
-     [research]  [quality_revision] (at most two edits, each followed by another audit)
-          ↓       ↑
-          └───────┘
-                ↓ pass
-            [review]
-                ↓
-        [human approval]
-                ↓
-     Existing publishing flow
+## Frontend
 
+`frontend/` contains the React application, presentation styles, API client, and Vite configuration. During development Vite proxies API and OAuth requests to FastAPI. A production Vite build is served by FastAPI from `frontend/dist`.
 
-Key Components:
-===============
+## Backend
 
-1. SCHEMAS (src/schemas/__init__.py)
-   - Task: Individual section/task with goal, bullets, word count
-   - Plan: Complete blog outline with all tasks
-   - State: Global workflow state (TypedDict)
-   - RouterDecision: Router output (needs_research, mode, queries)
-   - EvidenceItem: Research result
+`backend/app/main.py` exposes health, blog history, workflow progress, approval actions, publishing status, and login endpoints. Long LangGraph runs execute in a small worker pool; the API reads progress and approval interrupts from the same persisted thread checkpoint. OAuth continues to use the existing HTTP Basic protected router.
 
-2. PROMPTS (src/prompts/__init__.py)
-   - ROUTER_SYSTEM: Decides research needs
-   - RESEARCH_SYSTEM: Synthesizes web results
-   - ORCH_SYSTEM: Creates blog outline
-   - WORKER_SYSTEM: Writes individual sections
+`backend/src/` contains the existing LangChain prompts, graph nodes, review and publishing adapters, OAuth token store, and blog-history helpers. Relative `PUBLISHING_DB_PATH` values remain relative to the repository root, so moving the code does not move the project's existing database.
 
-3. NODES (src/nodes/)
-   - router_node: Determines research needs
-   - research_node: Executes web search via Tavily
-   - orchestrator: Generates structured Plan via LLM
-   - workers: Generates Markdown sections in parallel
-   - reducer_node: Combines sections & saves to file
+## Trust boundaries
 
-4. GRAPH (src/graph/workflow.py)
-   - StateGraph: Define nodes and edges
-   - Conditional edges: Route based on decisions
-   - Fan-out pattern: Parallel section generation
-
-5. CONFIG (src/config.py)
-   - LLM initialization (ChatOpenAI or ChatGroq)
-   - Environment variable loading
-
-
-Running the Agent:
-==================
-
-Option 1: Python script
-    python main.py
-
-Option 2: Programmatic
-    from main import run
-    result = run("Your blog topic here")
-    print(result["final"])
-
-
-File Organization Principles:
-==============================
-
-✓ Separation of Concerns
-  - Each node in separate file
-  - Schemas in one place
-  - Prompts grouped together
-  - Config centralized
-
-✓ Clear Dependencies
-  - Imports show data flow
-  - Easy to trace execution
-
-✓ Scalability
-  - Easy to add new nodes
-  - Easy to add new prompts
-  - Easy to add new tools
-
-✓ Testability
-  - Individual functions testable
-  - Nodes are independent
-  - State is immutable
-
-
-Notes:
-======
-- All original code preserved
-- No code removed or reduced
-- Only reorganized into proper structure
-- Follows real AI agent project patterns
-"""
+- Provider credentials and encrypted OAuth tokens remain on the backend.
+- Review and publishing actions require the configured `PUBLISHING_UI_PASSWORD` session when set.
+- OAuth endpoints retain `PUBLISHING_WEB_USER` and `PUBLISHING_WEB_PASSWORD` HTTP Basic authentication.
+- The workflow owns factual checks, review reports, human approvals, publication retries, and idempotency. The React UI displays backend-returned results without calculating review scores.

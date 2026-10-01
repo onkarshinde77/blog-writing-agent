@@ -8,6 +8,7 @@ import logging
 import os
 import sqlite3
 import time
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -65,12 +66,12 @@ def _meta(blog: dict) -> dict:
 def _idempotency_db() -> str:
     path = Path(os.getenv("PUBLISHING_DB_PATH", "publishing.db"))
     if not path.is_absolute():
-        path = Path(__file__).resolve().parents[2] / path
+        path = Path(__file__).resolve().parents[3] / path
     return str(path)
 
 
 def _init_db():
-    with sqlite3.connect(_idempotency_db(), timeout=10) as db:
+    with closing(sqlite3.connect(_idempotency_db(), timeout=10)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS publications (workflow_id TEXT, content_hash TEXT, platform TEXT, status TEXT, post_id TEXT, url TEXT, updated_at TEXT, PRIMARY KEY(workflow_id, platform))")
 
 
@@ -78,7 +79,7 @@ def _publish_once(platform: str, workflow_id: str, blog: dict, publish_fn) -> di
     data = _meta(blog)
     digest = hashlib.sha256((data["title"] + "\n" + data["content"]).encode()).hexdigest()
     _init_db()
-    with sqlite3.connect(_idempotency_db(), timeout=10) as db:
+    with closing(sqlite3.connect(_idempotency_db(), timeout=10)) as db, db:
         row = db.execute("SELECT content_hash,status,post_id,url FROM publications WHERE workflow_id=? AND platform=?", (workflow_id, platform)).fetchone()
         if row and row[0] == digest and row[1] == "published":
             return {"platform": platform, "status": row[1], "post_id": row[2], "url": row[3], "error": None}
@@ -89,7 +90,7 @@ def _publish_once(platform: str, workflow_id: str, blog: dict, publish_fn) -> di
     except Exception as exc:
         # Keep returned error classifications concise and free of raw API payloads/secrets.
         result = {"platform": platform, "status": "failed", "post_id": None, "url": None, "error": str(exc)[:120]}
-    with sqlite3.connect(_idempotency_db(), timeout=10) as db:
+    with closing(sqlite3.connect(_idempotency_db(), timeout=10)) as db, db:
         db.execute("INSERT OR REPLACE INTO publications VALUES (?,?,?,?,?,?,?)", (workflow_id, digest, platform, result["status"], result["post_id"], result["url"], datetime.now(timezone.utc).isoformat()))
     log.info("publish_result workflow_id=%s platform=%s status=%s post_id=%s error=%s", workflow_id, platform, result["status"], result["post_id"], result["error"])
     return result

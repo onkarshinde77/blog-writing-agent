@@ -185,7 +185,7 @@ def final_result_node(state: State) -> dict:
     failed = list(state.get("failed_platforms", []))
     if linkedin.get("status") == "failed": failed.append("linkedin")
     quality_report = state.get("quality_report") or {}
-    blog_status = "quality_failed" if quality_report.get("status") == "failed" else ("approved" if approved else "rejected")
+    blog_status = "approved" if approved else ("quality_failed" if quality_report.get("status") == "failed" else "rejected")
     if state.get("workflow_id"):
         save_state_blog({**state, "blog_plan": blog, "final": state.get("final") or blog.get("content", "")}, status=blog_status)
     result = {"blog": {"title": blog.get("title", ""), "status": blog_status},
