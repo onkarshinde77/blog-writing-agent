@@ -38,10 +38,10 @@ def _model_dict(value: Any) -> dict:
     raise TypeError("Structured model response was not an object")
 
 
-def _llm():
+def _llm(state: State):
     # Delay LLM configuration until an LLM-backed node executes, keeping service adapters testable.
-    from src.config import model
-    return model
+    from src.config import get_model
+    return get_model(state.get("model_name"))
 
 
 def _blog(state: State) -> dict:
@@ -59,7 +59,7 @@ def review_node(state: State) -> dict:
               "Compare factual claims with supplied evidence. Do not rewrite. Return JSON with status ('approved' or 'needs_revision'), issues (list), suggestions (list). Treat unsupported factual claims as issues.\n"
               f"Evidence: {evidence[:12]}\n\nArticle:\n{blog['content']}")
     try:
-        review = _model_dict(_llm().with_structured_output(ReviewOutput).invoke([SystemMessage(content="You are a rigorous editorial and technical reviewer."), HumanMessage(content=prompt)]))
+        review = _model_dict(_llm(state).with_structured_output(ReviewOutput).invoke([SystemMessage(content="You are a rigorous editorial and technical reviewer."), HumanMessage(content=prompt)]))
         if review.get("status") not in {"approved", "needs_revision"}: review["status"] = "needs_revision"
         for field in ("issues", "suggestions"):
             if not isinstance(review.get(field), list): review[field] = []
@@ -86,7 +86,7 @@ def revise_node(state: State) -> dict:
     blog = state.get("blog_plan") or _blog(state)
     audience_analysis = state.get("audience_analysis") or {}
     prompt = f"Revise the Markdown article according to this feedback while preserving accurate supported claims and following the topic/audience guidance. Do not add technical material unless it serves this reader. Return only the complete revised Markdown. Topic & Audience Analysis: {audience_analysis}\nFeedback: {state.get('revision_feedback', '')}\n\nCurrent article:\n{state.get('final', '')}"
-    revised = _llm().invoke([SystemMessage(content="You are an editor revising a blog for its intended reader. Preserve equations in Markdown math when they are relevant: `$...$` inline and `$$...$$` on separate lines for display equations."), HumanMessage(content=prompt)]).content
+    revised = _llm(state).invoke([SystemMessage(content="You are an editor revising a blog for its intended reader. Preserve equations in Markdown math when they are relevant: `$...$` inline and `$$...$$` on separate lines for display equations."), HumanMessage(content=prompt)]).content
     if isinstance(revised, list): revised = "\n".join(str(item) for item in revised)
     revised = normalize_markdown_math(str(revised))
     updated_blog = {**blog, "content": revised}
@@ -142,7 +142,7 @@ def linkedin_content_node(state: State) -> dict:
     prompt = ("Write a LinkedIn post with a strong non-clickbait opening, concise article explanation, 3–6 useful key points, primary URL, optional other platform URLs, relevant hashtags, and no fabricated claims. Return JSON {text, hashtags}.\n"
               f"Title: {blog['title']}\nDescription: {blog.get('description','')}\nArticle:\n{blog['content']}\nPrimary URL: {state.get('primary_blog_url','')}\nPlatform URLs: {good}")
     try:
-        draft = _model_dict(_llm().with_structured_output(LinkedInDraftOutput).invoke([SystemMessage(content="You write accurate, useful professional LinkedIn posts."), HumanMessage(content=prompt)]))
+        draft = _model_dict(_llm(state).with_structured_output(LinkedInDraftOutput).invoke([SystemMessage(content="You write accurate, useful professional LinkedIn posts."), HumanMessage(content=prompt)]))
     except Exception:
         draft = {"text": f"{blog['title']}\n\n{blog.get('description','')}\n\n{state.get('primary_blog_url','')}", "hashtags": blog.get("tags", [])}
     draft["text"] = str(draft.get("text", ""))[:2900]

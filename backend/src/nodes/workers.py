@@ -6,7 +6,7 @@ import time
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
-from src.config import model
+from src.config import get_model
 from src.prompts import WORKER_SYSTEM
 from src.schemas import State, Task, Plan
 
@@ -28,6 +28,7 @@ def fanout(state: State):
             "mode": state['mode'],
             "plan": state['plan'].model_dump(),
             "audience_analysis": state.get("audience_analysis") or {},
+            "model_name": state.get("model_name"),
             "evidence": [item.model_dump() if hasattr(item, "model_dump") else item for item in state.get("evidence", [])[:10]]
         })
         for task in state['plan'].tasks]
@@ -54,6 +55,7 @@ def workers(payload: Dict) -> Dict:
     mode = payload.get("mode", "closed_book")
     evidence = payload.get("evidence", [])
     audience_analysis = payload.get("audience_analysis", {})
+    chat_model = get_model(payload.get("model_name"))
     evidence_text = "\n".join(
         f"- {item.get('title', 'Source')}: {str(item.get('content', ''))[:1200]} (cite only as [{item.get('title', 'Source')}]({item.get('url', '')}))"
         for item in evidence if isinstance(item, dict) and item.get("url")
@@ -90,7 +92,7 @@ def workers(payload: Dict) -> Dict:
     section = ""
     for attempt in range(max_retries):
         try:
-            section = model.invoke(messages).content.strip()
+            section = chat_model.invoke(messages).content.strip()
             break
         except Exception as e:
             if "RateLimitError" in str(type(e)) or "429" in str(e):

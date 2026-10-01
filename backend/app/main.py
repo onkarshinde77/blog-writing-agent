@@ -10,10 +10,12 @@ import sqlite3
 import threading
 import time
 import uuid
+import json
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
+from urllib.request import urlopen
 
 from dotenv import load_dotenv
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
@@ -26,6 +28,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from src.blog_history import database_path, delete_blog_history, list_blog_history, recover_checkpoint_history
+from src.config import DEFAULT_MODEL, MODEL_OPTIONS, OLLAMA_BASE_URL
 from src.graph import app as workflow
 from src.markdown_math import normalize_markdown_math
 from src.publishing.linkedin_oauth import router as oauth_router
@@ -56,6 +59,7 @@ class BlogRequest(BaseModel):
     audience: str = Field(default="General readers", max_length=240)
     tone: str = Field(default="Clear and conversational", max_length=120)
     length: str = Field(default="Standard · about 1,000 words", max_length=120)
+    model_name: Literal["qwen3.5:4b", "gemma3:4b"] = DEFAULT_MODEL
 
 
 class ActionRequest(BaseModel):
@@ -111,6 +115,7 @@ def _snapshot_cache(snapshot: Any, pending: dict[str, Any] | None) -> dict[str, 
     values = snapshot.values or {}
     return {
         "topic": values.get("topic", ""),
+        "model_name": values.get("model_name", DEFAULT_MODEL),
         "final": normalize_markdown_math(values.get("final", "") or ""),
         "blog": _plain(values.get("blog_plan") or {}),
         "evidence": _plain(values.get("evidence") or []),
@@ -185,6 +190,7 @@ def _workflow_status(workflow_id: str) -> dict[str, Any]:
             "stage": _STAGE_MAP.get(job.get("node")),
             "node": job.get("node"),
             "topic": job.get("topic", ""),
+            "model_name": job.get("model_name", DEFAULT_MODEL),
             "final": "", "blog": {}, "evidence": [], "quality_report": {},
             "review": {}, "audience_analysis": {}, "pending": None,
             "final_result": {}, "published_links": {}, "error": job.get("error"),
@@ -226,6 +232,7 @@ def _workflow_status(workflow_id: str) -> dict[str, Any]:
         "stage": _STAGE_MAP.get(current_node, "Human approval" if pending else None),
         "node": current_node,
         "topic": values.get("topic", ""),
+        "model_name": values.get("model_name", job.get("model_name", DEFAULT_MODEL)),
         "final": normalize_markdown_math(values.get("final", "") or ""),
         "blog": _plain(values.get("blog_plan") or {}),
         "evidence": _plain(values.get("evidence") or []),
@@ -268,6 +275,25 @@ def recover_history() -> None:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "editorial-studio-api"}
+
+
+@app.get("/api/models")
+def local_models() -> dict[str, Any]:
+    """Return supported Ollama models and whether they are installed locally."""
+    installed: set[str] = set()
+    ollama_online = False
+    try:
+        with urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=1.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        installed = {item.get("name", "") for item in payload.get("models", [])}
+        ollama_online = True
+    except Exception:
+        pass
+    models = [
+        {"id": model_id, "label": label, "installed": model_id in installed or f"{model_id}:latest" in installed}
+        for model_id, label in MODEL_OPTIONS.items()
+    ]
+    return {"models": models, "default": DEFAULT_MODEL, "ollama_online": ollama_online}
 
 
 @app.get("/api/auth/status")
@@ -336,9 +362,9 @@ def create_workflow(body: BlogRequest) -> dict[str, str]:
     initial = {
         "topic": editorial_brief, "mode": "", "needs_research": False,
         "queries": [], "evidence": [], "plan": None, "sections": [], "final": "",
-        "workflow_id": workflow_id,
+        "workflow_id": workflow_id, "model_name": body.model_name,
     }
-    _set_job(workflow_id, status="queued", topic=body.topic.strip())
+    _set_job(workflow_id, status="queued", topic=body.topic.strip(), model_name=body.model_name)
     executor.submit(_run_workflow, workflow_id, initial, None)
     return {"workflow_id": workflow_id, "status": "queued"}
 

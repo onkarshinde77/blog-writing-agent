@@ -5,7 +5,7 @@ Creates the blog outline/plan based on topic and evidence.
 import json
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
-from src.config import model
+from src.config import get_model
 from src.prompts import ORCH_SYSTEM
 from src.schemas import State, Plan
 import time
@@ -23,7 +23,7 @@ def orchestrator(state: State) -> Dict:
     """
     # JSON mode avoids Groq's tool-call argument parser. We include the concrete
     # schema in the prompt and then validate the parsed object with Pydantic.
-    planner = model.with_structured_output(Plan, method="json_mode")
+    planner = get_model(state.get("model_name")).with_structured_output(Plan, method="json_schema")
     evidence = state["evidence"]
     
     # Convert Pydantic objects to dictionaries for LLM context

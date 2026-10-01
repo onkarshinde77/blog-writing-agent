@@ -1,7 +1,7 @@
 # Determines if web research is needed and selects appropriate mode.
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
-from src.config import model
+from src.config import get_model
 from src.prompts import ROUTER_SYSTEM
 from src.schemas import State, RouterDecision
 
@@ -15,7 +15,7 @@ def router_node(state: State) -> Dict:
         Dict: Updated state with needs_research, mode, and queries
     """
     topic = state["topic"]
-    decider = model.with_structured_output(RouterDecision)
+    decider = get_model(state.get("model_name")).with_structured_output(RouterDecision)
     decision = decider.invoke(
         [
             SystemMessage(content=ROUTER_SYSTEM),

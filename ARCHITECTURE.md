@@ -7,7 +7,7 @@ Browser
        └── /auth/*                 │
                                    ▼
                          FastAPI (backend/app/)
-                           ├── workflow job API
+                           ├── workflow job and local-model API
                            ├── review and publish actions
                            ├── existing OAuth router
                            └── static frontend build in production
@@ -33,6 +33,8 @@ Browser
 `backend/app/main.py` exposes health, blog history, workflow progress, approval actions, publishing status, and login endpoints. Long LangGraph runs execute in a small worker pool; the API reads progress and approval interrupts from the same persisted thread checkpoint. OAuth continues to use the existing HTTP Basic protected router.
 
 `backend/src/` contains the existing LangChain prompts, graph nodes, review and publishing adapters, OAuth token store, and blog-history helpers. Relative `PUBLISHING_DB_PATH` values remain relative to the repository root, so moving the code does not move the project's existing database.
+
+The model selector chooses an allowlisted Ollama model per workflow. That choice is carried through planning, writing, quality checks, review, and LinkedIn drafting; it does not change another running workflow. `OLLAMA_BASE_URL` and `OLLAMA_MODEL` configure the local server and initial selection.
 
 ## Trust boundaries
 

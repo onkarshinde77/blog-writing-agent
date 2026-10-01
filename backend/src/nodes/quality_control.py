@@ -102,7 +102,7 @@ def _structural_findings(state: State, article: str, evidence: list[dict[str, st
 
 def quality_check_node(state: State) -> dict:
     """Audit the full article; block approval until it passes or exhausts safe retries."""
-    from src.config import model
+    from src.config import get_model
 
     article = normalize_markdown_math(state.get("final", ""))
     evidence = _evidence_records(state.get("evidence", []))
@@ -126,7 +126,7 @@ ARTICLE:
 {article}
 """
     try:
-        audit_obj = model.with_structured_output(QualityAudit).invoke([
+        audit_obj = get_model(state.get("model_name")).with_structured_output(QualityAudit).invoke([
             SystemMessage(content="You are a strict final editorial, source-verification, and calculation auditor. Be evidence-led and do not claim to have verified unavailable facts."),
             HumanMessage(content=prompt),
         ])
@@ -189,7 +189,7 @@ def quality_research_node(state: State) -> dict:
 
 def quality_revision_node(state: State) -> dict:
     """Revise the full article against the audit and return it to the quality gate."""
-    from src.config import model
+    from src.config import get_model
 
     report = state.get("quality_report") or {}
     evidence = _evidence_records(state.get("evidence", []))
@@ -214,7 +214,7 @@ SUPPLIED EVIDENCE:
 ARTICLE:
 {state.get('final', '')}
 """
-    revised = model.invoke([
+    revised = get_model(state.get("model_name")).invoke([
         SystemMessage(content="You are a careful technical editor revising a complete article against a strict quality audit."),
         HumanMessage(content=prompt),
     ]).content

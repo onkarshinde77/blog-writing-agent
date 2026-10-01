@@ -19,6 +19,7 @@ async function request(path, options = {}) {
 
 export const api = {
   health: () => request("/api/health"),
+  models: () => request("/api/models"),
   auth: () => request("/api/auth/status"),
   login: (password) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request("/api/auth/logout", { method: "POST" }),

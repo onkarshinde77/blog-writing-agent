@@ -3,14 +3,14 @@ from typing import Dict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from src.config import model
+from src.config import get_model
 from src.prompts import TOPIC_ANALYSIS_SYSTEM
 from src.schemas import State, TopicAudienceAnalysis
 
 
 def topic_analysis_node(state: State) -> Dict:
     """Return reader-focused writing guidance for all downstream content nodes."""
-    analysis = model.with_structured_output(TopicAudienceAnalysis).invoke(
+    analysis = get_model(state.get("model_name")).with_structured_output(TopicAudienceAnalysis).invoke(
         [
             SystemMessage(content=TOPIC_ANALYSIS_SYSTEM),
             HumanMessage(content=f"Analyze this blog topic before planning: {state['topic']}"),

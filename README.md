@@ -41,7 +41,14 @@ npm run dev --prefix frontend
 
 Open the Vite URL printed in the terminal (normally `http://127.0.0.1:5173`). Vite forwards `/api` and `/auth` requests to the local FastAPI server.
 
-Copy `.env.example` to `.env` and configure `GROQ_API_KEY` and `TAVILY_API_KEY` for generation and research. Provider keys, OAuth credentials, and database settings stay on the backend. Keep `.env` private.
+Install and start Ollama on the machine running FastAPI, and make sure the models you want are available locally:
+
+```powershell
+ollama pull qwen3.5:4b
+ollama pull gemma3:4b
+```
+
+The studio model selector chooses which local model handles planning, reasoning, writing, and review. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; `OLLAMA_MODEL` sets the default selection. `TAVILY_API_KEY` is optional and is only needed when the agent performs web research. Ollama, research, and publishing credentials stay on the backend. Keep `.env` private.
 
 ## Production build
 
