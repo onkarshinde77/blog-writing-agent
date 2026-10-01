@@ -7,6 +7,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 load_dotenv()
 
 # Streamlit secrets fallback for deployment
@@ -18,10 +19,14 @@ if tavily_key:
 
 # LLM Configuration
 model = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.4,
-            api_key=groq_key
+    model="openai/gpt-oss-20b",
+    temperature=0.3,
+    api_key=groq_key,
+    # Retry temporary DNS, socket, timeout, rate-limit, and upstream failures.
+    max_retries=5,
+    timeout=60,
 )
+
 # Application Configuration
 CONFIG = {
     "configurable": {"thread_id": "blog-1"},

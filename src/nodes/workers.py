@@ -2,6 +2,7 @@
 Workers node for Blog Writing Agent.
 Generates individual blog sections in parallel.
 """
+import time
 from typing import Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
@@ -13,10 +14,8 @@ from src.schemas import State, Task, Plan
 def fanout(state: State):
     """
     Fan out to workers: create parallel tasks for each section.
-    
     Args:
         state (State): Current workflow state with plan
-    
     Returns:
         List[Send]: List of Send objects routing to workers
     """
@@ -27,7 +26,9 @@ def fanout(state: State):
             "task": task,
             "topic": state['topic'],
             "mode": state['mode'],
-            "plan": state['plan'].model_dump()
+            "plan": state['plan'].model_dump(),
+            "audience_analysis": state.get("audience_analysis") or {},
+            "evidence": [item.model_dump() if hasattr(item, "model_dump") else item for item in state.get("evidence", [])[:10]]
         })
         for task in state['plan'].tasks]
     
@@ -37,10 +38,8 @@ def fanout(state: State):
 def workers(payload: Dict) -> Dict:
     """
     Write one blog section based on task and context.
-    
     Args:
         payload (Dict): Contains task, plan, evidence, topic, and mode
-    
     Returns:
         Dict: Section content with task ID for ordering
     """
@@ -53,6 +52,12 @@ def workers(payload: Dict) -> Dict:
     plan = Plan(**payload["plan"])
     topic = payload["topic"]
     mode = payload.get("mode", "closed_book")
+    evidence = payload.get("evidence", [])
+    audience_analysis = payload.get("audience_analysis", {})
+    evidence_text = "\n".join(
+        f"- {item.get('title', 'Source')}: {str(item.get('content', ''))[:1200]} (cite only as [{item.get('title', 'Source')}]({item.get('url', '')}))"
+        for item in evidence if isinstance(item, dict) and item.get("url")
+    ) or "No research evidence was supplied. Do not invent citations or specific statistics."
     
     # Format bullets as text
     bullets_text = "\n- " + "\n- ".join(task.bullets)
@@ -66,6 +71,7 @@ def workers(payload: Dict) -> Dict:
                 f"Tone: {plan.tone}\n"
                 f"Blog kind: {plan.blog_kind}\n"
                 f"Constraints: {plan.constraints}\n"
+                f"Topic & Audience Analysis (follow it; omit elements marked not useful): {audience_analysis}\n"
                 f"Topic: {topic}\n"
                 f"Mode: {mode}\n\n"
                 f"Section title: {task.title}\n"
@@ -74,12 +80,12 @@ def workers(payload: Dict) -> Dict:
                 f"Tags: {task.tags}\n"
                 f"requires_research: {task.requires_research}\n"
                 f"requires_code: {task.requires_code}\n"
+                f"Research evidence and exact citation URLs:\n{evidence_text}\n\n"
                 f"Bullets:{bullets_text}\n\n"
             )
         )
     ]
     
-    import time
     max_retries = 10
     section = ""
     for attempt in range(max_retries):

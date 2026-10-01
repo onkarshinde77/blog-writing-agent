@@ -1,82 +1,95 @@
-"""
-Research node for Blog Writing Agent.
-Performs web search and synthesizes evidence items.
-"""
-from typing import List, Dict
-from langchain_core.messages import SystemMessage, HumanMessage
-from src.config import model
-from src.prompts import RESEARCH_SYSTEM
-from src.schemas import State, EvidencePack
-from src.tools import tavily_search
+import re
+from typing import Dict, List
+from src.schemas import State, EvidenceItem
+from src.tools import duck_search
 
-# Research Node
+
+def clean_body(text: str) -> str:
+
+    if not isinstance(text, str):
+        return ""
+
+    if not text.strip():
+        return ""
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", " ", text)
+    # Remove URLs
+    text = re.sub(r"https?://\S+|www\.\S+", " ", text)
+    # Remove markdown links but keep text
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Keep mostly English sentences
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    english_sentences = []
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+        english_chars = len(re.findall(r"[A-Za-z]", sentence))
+        total_chars = len(re.findall(r"[A-Za-z\u00C0-\uFFFF]", sentence))
+
+        if total_chars == 0:
+            continue
+        if english_chars / total_chars >= 0.7:
+            english_sentences.append(sentence.strip())
+
+    text = " ".join(english_sentences)
+    # Normalize spaces
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def research_node(state: State) -> Dict:
-    """
-    Execute web research based on router-generated queries.
-    
-    Args:
-        state (State): Current workflow state containing queries
-    
-    Returns:
-        Dict: Updated state with deduplicated evidence items
-    """
-    queries = state['queries'] or []
-    max_results = 3
-    raw_results: List[dict] = []
-    
-    # Perform search for each query
-    for q in queries:
-        raw_results.extend(tavily_search(q, max_result=max_results))
-    
-    if not raw_results:
+    queries = state.get("queries", [])
+    if not queries:
+        print("[Research] No queries found.")
         return {"evidence": []}
-    
-    # Extract and structure evidence using LLM
-    import json
-    import time
-    import re
-    
-    extractor = model.with_structured_output(EvidencePack)
-    pack = None
-    
-    for attempt in range(5):
+
+    evidence: List[EvidenceItem] = []
+    for query in queries:
+        if not isinstance(query, str) or not query.strip():
+            continue
+        print(f"[Research] Searching: {query}")
         try:
-            pack = extractor.invoke([
-                SystemMessage(content=RESEARCH_SYSTEM),
-                HumanMessage(content=f"Raw results:\n{raw_results}")
-            ])
-            break
+            results = duck_search(
+                query=query,
+                max_results=5
+            )
         except Exception as e:
-            error_str = str(e)
-            # Try to recover from Groq's 400 tool_use_failed where it emits raw `<function>` tags instead of an API call
-            if "failed_generation" in error_str and "<function=" in error_str:
-                print(f"Attempting to recover failed generation from Groq (attempt {attempt+1})...")
-                # Extract the JSON payload within the <function> tags
-                match = re.search(r'<function.*?>\s*({.*?})\s*</function>', error_str, re.DOTALL | re.IGNORECASE)
-                if match:
-                    try:
-                        json_str = match.group(1)
-                        # Clean up common json string escapes that might be in the error dump
-                        json_str = json_str.replace('\\"', '"').replace('\\n', '\n')
-                        data = json.loads(json_str)
-                        pack = EvidencePack(**data)
-                        break
-                    except Exception as inner_e:
-                        print(f"Failed to decode recovered json: {inner_e}")
-            
-            if attempt == 4:
-                raise e
-                
-            print(f"Research node extractor failed parsing, retrying {attempt+2}/5...")
-            time.sleep(3)
-            
-    if pack is None:
-        return {"evidence": []}
-    
-    # Deduplicate by URL
-    dedup = {}
-    for e in pack.evidence:
-        if e.url:
-            dedup[e.url] = e
-    
-    return {"evidence": list(dedup.values())}
+            print(f"[Research] Search failed: {query}")
+            print(f"[Research] Error: {e}")
+            continue
+
+        if not results:
+            print(f"[Research] No results: {query}")
+            continue
+
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            title = result.get("title", "")
+            url = result.get("href", "")
+            body = result.get("body", "")
+
+            if not body:
+                continue
+            try:
+                body = clean_body(body)
+            except Exception as e:
+                print(f"[Research] Cleaning failed: {e}")
+                continue
+
+            if not body:
+                continue
+
+            evidence.append(
+                EvidenceItem(
+                    title=title,
+                    url=url,
+                    content=body
+                )
+            )
+
+    print(f"[Research] Total evidence items: {len(evidence)}")
+    return {
+        "evidence": evidence
+    }

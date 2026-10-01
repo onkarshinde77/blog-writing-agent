@@ -10,6 +10,20 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.config import CONFIG
 from src.graph import app
+from src.blog_history import list_blog_history, recover_checkpoint_history
+from src.markdown_math import normalize_markdown_math
+
+
+def _find_exception_type(error, names):
+    """Walk wrapped errors so provider failures get useful UI guidance."""
+    seen = set()
+    current = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in names:
+            return type(current).__name__
+        current = current.__cause__ or current.__context__
+    return None
 
 
 # ============================================================================
@@ -17,6 +31,9 @@ from src.graph import app
 # ============================================================================
 def run(topic: str) -> dict:
     """Execute the blog writing workflow for a given topic synchronously."""
+    import uuid
+    thread_id = str(uuid.uuid4())
+    run_config = {"configurable": {"thread_id": thread_id}, "run_name": "blog-writing-agent"}
     out = app.invoke(
         {
             "topic": topic,
@@ -27,8 +44,9 @@ def run(topic: str) -> dict:
             "plan": None,
             "sections": [],
             "final": "",
+            "workflow_id": thread_id,
         },
-        config=CONFIG
+        config=run_config
     )
     return out
 
@@ -75,50 +93,45 @@ with st.sidebar:
         
     st.header("Previous Blogs")
     
-    # Fetch all threads from SQLite
-    completed_blogs = []
-    seen_topics = set()
-    import sqlite3
+    # Load saved articles from the same local SQLite file used by checkpoints.
     try:
-        conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
-        c = conn.cursor()
-        c.execute("SELECT DISTINCT thread_id FROM checkpoints")
-        thread_ids = [row[0] for row in c.fetchall()]
-        conn.close()
-        for tid in thread_ids:
-            states = list(app.get_state_history({"configurable": {"thread_id": tid}}))
-            for state in states:
-                if not state.next and state.values.get("final"):
-                    s_id = state.config.get("configurable", {}).get("checkpoint_id", "")
-                    if s_id not in seen_topics:
-                        seen_topics.add(s_id)
-                        completed_blogs.append(state)
-    except Exception:
-        pass
+        recovered_count = 0
+        if not st.session_state.get("blog_history_recovered"):
+            recovered_count = recover_checkpoint_history(app)
+            st.session_state.blog_history_recovered = True
+        saved_blogs = list_blog_history()
+        if recovered_count:
+            st.caption(f"Recovered {recovered_count} blog(s) from existing checkpoints.")
+    except Exception as exc:
+        saved_blogs = []
+        st.warning(f"Could not load local blog history ({type(exc).__name__}).")
                 
-    if not completed_blogs:
+    if not saved_blogs:
         st.info("No history yet.")
     else:
-        for idx, state in enumerate(completed_blogs):
-            h_topic = state.values.get("topic", f"Blog {idx+1}")
-            # Truncate topic logic for sidebar
-            short_topic = (h_topic[:25] + '...') if len(h_topic) > 25 else h_topic
+        for idx, blog in enumerate(saved_blogs):
+            h_title = blog.get("title") or blog.get("topic") or f"Blog {idx+1}"
+            short_title = (h_title[:25] + '...') if len(h_title) > 25 else h_title
             
-            if st.button(f"💬 {short_topic}", key=f"hist_btn_{idx}_{state.config.get('configurable', {}).get('checkpoint_id', idx)}", use_container_width=True):
+            if st.button(f"💬 {short_title}", key=f"hist_btn_{blog['thread_id']}", use_container_width=True):
                 st.session_state.viewing_history = True
-                st.session_state.current_view_blog = state.values.get("final", "")
-                st.session_state.current_view_topic = h_topic
+                st.session_state.current_view_blog = normalize_markdown_math(blog.get("content", ""))
+                st.session_state.current_view_topic = blog.get("topic", "")
+                st.session_state.current_view_title = h_title
+                st.session_state.current_view_thread_id = blog["thread_id"]
 
 if st.session_state.get("viewing_history", False):
     h_topic = st.session_state.get("current_view_topic", "Previous Blog")
-    h_final = st.session_state.get("current_view_blog", "")
+    h_title = st.session_state.get("current_view_title", h_topic)
+    h_final = normalize_markdown_math(st.session_state.get("current_view_blog", ""))
     
-    st.subheader(f"📚 {h_topic}")
+    st.subheader(f"📚 {h_title}")
+    st.caption(f"Topic: {h_topic} · Thread ID: {st.session_state.get('current_view_thread_id', '')}")
     st.markdown(h_final)
     st.download_button(
         label="⬇️ Download Markdown File",
         data=h_final,
-        file_name=f"{h_topic.replace(' ', '_').lower()}.md",
+        file_name=f"{h_title.replace(' ', '_').lower()}.md",
         mime="text/markdown"
     )
     st.stop()
@@ -137,6 +150,7 @@ if st.button("Generate Blog Post", type="primary"):
         ui_nodes = {
             "router": {"label": "Analyzing topic & routing", "icon": "🧭"},
             "research": {"label": "Researching web for evidence", "icon": "🔍"},
+            "topic_analysis": {"label": "Analyzing topic & audience", "icon": "👥"},
             "orchestrator": {"label": "Orchestrating blog plan", "icon": "📋"},
             "workers": {"label": "Workers writing sections", "icon": "✍️"},
             "reducer": {"label": "Compiling final blog", "icon": "✨"}
@@ -161,6 +175,10 @@ if st.button("Generate Blog Post", type="primary"):
         
         final_blog_container = st.container()
         
+        import uuid
+        current_thread_id = str(uuid.uuid4())
+        run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
+
         initial_state = {
             "topic": topic_input,
             "mode": "",
@@ -170,6 +188,7 @@ if st.button("Generate Blog Post", type="primary"):
             "plan": None,
             "sections": [],
             "final": "",
+            "workflow_id": current_thread_id,
         }
         
         try:
@@ -180,9 +199,7 @@ if st.button("Generate Blog Post", type="primary"):
             containers["router"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['router']['icon']} {ui_nodes['router']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
             progress_bar.progress(5)
             
-            import uuid
-            current_thread_id = str(uuid.uuid4())
-            run_config = {"configurable": {"thread_id": current_thread_id}, "run_name": "blog-writing-agent"}
+            st.session_state.active_workflow_id = current_thread_id
             
             # Using langgraph stream to get real-time updates from nodes
             for output in app.stream(initial_state, config=run_config):
@@ -202,13 +219,18 @@ if st.button("Generate Blog Post", type="primary"):
                         else:
                             append_log("Router decided research is NOT needed.")
                             containers["research"].markdown(f"<div class='node-box'>⏭️ &nbsp; **{ui_nodes['research']['icon']} {ui_nodes['research']['label']}** - <span class='status-skipped'>Skipped (Not needed)</span></div>", unsafe_allow_html=True)
-                            containers["orchestrator"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['orchestrator']['icon']} {ui_nodes['orchestrator']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+                            containers["topic_analysis"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
                             
                     elif node_name == "research":
                         progress_bar.progress(40)
                         found = len(value.get('evidence', []))
                         containers["research"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['research']['icon']} {ui_nodes['research']['label']}** - <span class='status-completed'>Completed (Found {found} items)</span></div>", unsafe_allow_html=True)
-                        # Research is followed by orchestrator
+                        # Research is followed by topic and audience analysis.
+                        containers["topic_analysis"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
+
+                    elif node_name == "topic_analysis":
+                        progress_bar.progress(50)
+                        containers["topic_analysis"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['topic_analysis']['icon']} {ui_nodes['topic_analysis']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
                         containers["orchestrator"].markdown(f"<div class='node-box node-box-running'>🔄 &nbsp; **{ui_nodes['orchestrator']['icon']} {ui_nodes['orchestrator']['label']}** - <span class='status-running'>Running...</span></div>", unsafe_allow_html=True)
                             
                     elif node_name == "orchestrator":
@@ -231,10 +253,11 @@ if st.button("Generate Blog Post", type="primary"):
                         containers["reducer"].markdown(f"<div class='node-box node-box-completed'>✅ &nbsp; **{ui_nodes['reducer']['icon']} {ui_nodes['reducer']['label']}** - <span class='status-completed'>Completed</span></div>", unsafe_allow_html=True)
                         final_state = value
 
-            if final_state is None and 'out' in locals():
-                 pass
+            if final_state is None:
+                 st.session_state.active_workflow_id = current_thread_id
+                 st.info("Blog generated. Continue in the approval dashboard below.")
             elif final_state:
-                final_content = final_state.get("final", "")
+                final_content = normalize_markdown_math(final_state.get("final", ""))
                 with final_blog_container:
                     st.success("🎉 Blog generation completed successfully!")
                     st.markdown("---")
@@ -252,5 +275,97 @@ if st.button("Generate Blog Post", type="primary"):
 
         except Exception as e:
             st.error(f"An error occurred during workflow execution: {str(e)}")
+            provider_error = _find_exception_type(e, {"APIConnectionError", "APITimeoutError"})
+            if provider_error:
+                st.warning(
+                    "The app could not reach the Groq API after automatic retries. "
+                    "Check that your internet connection is available, api.groq.com "
+                    "is reachable over HTTPS (port 443), and any VPN or proxy settings "
+                    "are correct. Then retry generation. This error is usually a network "
+                    "or proxy issue, rather than a problem with the blog topic."
+                )
             import traceback
             st.code(traceback.format_exc())
+
+# Protect approval/publishing actions when a deployment configures a dashboard password.
+publishing_password = os.getenv("PUBLISHING_UI_PASSWORD")
+if publishing_password and not st.session_state.get("publishing_authenticated"):
+    st.subheader("Publishing dashboard sign in")
+    supplied_password = st.text_input("Publishing password", type="password", key="publishing_password_input")
+    if st.button("Sign in to publishing dashboard") and __import__("hmac").compare_digest(supplied_password, publishing_password):
+        st.session_state.publishing_authenticated = True
+        st.rerun()
+    st.info("Sign in to review and publish saved articles.")
+    st.stop()
+
+# Resumable approval dashboard. LangGraph's interrupt payload is persisted with the stable thread ID.
+active_id = st.session_state.get("active_workflow_id")
+if active_id:
+    from langgraph.types import Command
+    active_config = {"configurable": {"thread_id": active_id}}
+    try:
+        snapshot = app.get_state(active_config)
+        pending = next((item.value for task in snapshot.tasks for item in task.interrupts), None)
+        if pending:
+            st.divider()
+            if pending.get("type") == "blog_review":
+                st.subheader("Blog review")
+                quality_gate = pending.get("quality_gate") or {}
+                st.success("Final quality gate passed")
+                with st.expander("Topic & audience analysis", expanded=False):
+                    st.json(pending.get("topic_analysis") or {})
+                with st.expander("Quality-control report", expanded=False):
+                    st.json(quality_gate)
+                st.json(pending.get("review") or {})
+                current_blog = dict(pending.get("blog") or {})
+                current_blog["content"] = normalize_markdown_math(current_blog.get("content", ""))
+                edited_title = st.text_input("Title", current_blog.get("title", ""), key="approval_title")
+                edited_content = st.text_area("Approved blog (Markdown)", current_blog.get("content", ""), height=350, key="approval_content")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    approve_blog = st.button("Approve", key="approve_blog")
+                with c2:
+                    revise_blog = st.button("Revise", key="revise_blog")
+                with c3:
+                    reject_blog = st.button("Reject", key="reject_blog")
+                platforms = st.multiselect("Publish to", ["wordpress", "devto"], default=["wordpress", "devto"], format_func=lambda p: {"wordpress": "WordPress.com", "devto": "DEV.to"}[p])
+                feedback = st.text_input("Revision notes", key="blog_feedback")
+                if approve_blog:
+                    app.invoke(Command(resume={"action": "approve", "platforms": platforms}), config=active_config)
+                    st.rerun()
+                if revise_blog:
+                    app.invoke(Command(resume={"action": "edit", "blog": {**current_blog, "title": edited_title, "content": edited_content}}), config=active_config)
+                    st.rerun()
+                if reject_blog:
+                    app.invoke(Command(resume={"action": "reject", "feedback": feedback}), config=active_config)
+                    st.rerun()
+            elif pending.get("type") == "linkedin_approval":
+                st.subheader("LinkedIn post approval")
+                draft = pending.get("draft") or {}
+                st.caption("Primary article: " + str(pending.get("primary_url", "")))
+                st.caption("Hashtags: " + " ".join("#" + str(tag).lstrip("#") for tag in draft.get("hashtags", [])))
+                st.json(pending.get("platform_links", {}))
+                linkedin_text = st.text_area("LinkedIn post", draft.get("text", ""), height=220, key="linkedin_text")
+                c1, c2 = st.columns(2)
+                with c1:
+                    approve_linkedin = st.button("Approve & Publish", key="approve_linkedin")
+                with c2:
+                    reject_linkedin = st.button("Reject LinkedIn post", key="reject_linkedin")
+                if approve_linkedin:
+                    app.invoke(Command(resume={"action": "approve", "text": linkedin_text}), config=active_config)
+                    st.rerun()
+                if reject_linkedin:
+                    app.invoke(Command(resume={"action": "reject"}), config=active_config)
+                    st.rerun()
+                if linkedin_text != draft.get("text", ""):
+                    if st.button("Save edit for review", key="save_linkedin_edit"):
+                        app.invoke(Command(resume={"action": "edit", "text": linkedin_text}), config=active_config)
+                        st.rerun()
+        elif snapshot.values.get("final"):
+            st.subheader("Publishing results")
+            st.markdown(normalize_markdown_math(snapshot.values.get("final", "")))
+            result = snapshot.values.get("final_result") or {"platforms": snapshot.values.get("published_links", {}), "linkedin": snapshot.values.get("linkedin_result"), "successful_urls": snapshot.values.get("all_published_urls", []), "failed_platforms": snapshot.values.get("failed_platforms", [])}
+            st.json(result)
+            st.text_area("Copy all links", "\n".join(result.get("successful_urls", [])), height=90, key="published_links_copy")
+    except Exception as exc:
+        st.warning("Workflow status is not available yet.")
