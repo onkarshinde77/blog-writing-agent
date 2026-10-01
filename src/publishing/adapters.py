@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 import bleach
@@ -101,13 +101,16 @@ def publish_wordpress(blog: dict, workflow_id: str) -> dict:
         token = get_wordpress_token()
         site = os.getenv("WORDPRESS_SITE_ID") or get_wordpress_site_id()
         if not token or not site: raise RuntimeError("wordpress_oauth_required")
-        _safe_url("https://wordpress.com")
+        # WordPress.com accepts either the numeric site ID or its domain in
+        # this path segment. The OAuth helper may return blog_url when an old
+        # token record has no blog_id, so encode URLs/domains before building it.
+        site_path = quote(str(site).strip(), safe=".-_")
         from markdown import markdown
         html = markdown(data["content"], extensions=["tables", "fenced_code"])
         html = bleach.clean(html, tags={"p", "br", "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "pre", "code", "strong", "em", "del", "a", "hr", "table", "thead", "tbody", "tr", "th", "td"}, attributes={"a": ["href", "title"]}, protocols=["http", "https", "mailto"], strip=True)
         form = {"title": data["title"], "content": html, "excerpt": data["description"], "tags": ",".join(data["tags"]), "status": "publish"}
         if data["cover_image"]: form["media_urls[]"] = _safe_url(data["cover_image"])
-        endpoint = f"https://public-api.wordpress.com/rest/v1.1/sites/{site}/posts/new/"
+        endpoint = f"https://public-api.wordpress.com/rest/v1.1/sites/{site_path}/posts/new/"
         payload = _request("POST", endpoint, headers={"Authorization": f"Bearer {token}"}, data_body=form).json()
         url = payload.get("URL") or payload.get("url")
         if not url: raise RuntimeError("invalid_api_response")
@@ -132,14 +135,37 @@ def publish_linkedin(text: str, author: str | None = None, workflow_id: str | No
     try:
         from src.publishing.linkedin_oauth import get_linkedin_token, get_linkedin_author
         token = get_linkedin_token() or os.getenv("LINKEDIN_ACCESS_TOKEN")
-        author = author or get_linkedin_author()
+        # Prefer the encrypted OAuth profile, then fall back to the explicit
+        # server-side URN just as the diagnostic client in temp.py does.
+        author = author or get_linkedin_author() or os.getenv("LINKEDIN_AUTHOR_URN")
     except Exception:
         token, author = os.getenv("LINKEDIN_ACCESS_TOKEN"), author or os.getenv("LINKEDIN_AUTHOR_URN")
     if not token or not author: return {"platform": "linkedin", "status": "failed", "post_id": None, "url": None, "error": "missing_credentials"}
     if not author.startswith("urn:li:person:"): return {"platform": "linkedin", "status": "failed", "post_id": None, "url": None, "error": "member_author_urn_required"}
     version = os.getenv("LINKEDIN_API_VERSION", "202608")
     def send(data):
-        response = _request("POST", "https://api.linkedin.com/rest/posts", headers={"Authorization": f"Bearer {token}", "LinkedIn-Version": version, "X-Restli-Protocol-Version": "2.0.0"}, json_body={"author": author, "commentary": data["content"], "visibility": "PUBLIC", "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []}, "lifecycleState": "PUBLISHED", "isReshareDisabledByAuthor": False})
+        response = _request(
+            "POST",
+            "https://api.linkedin.com/rest/posts",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "LinkedIn-Version": version,
+                "X-Restli-Protocol-Version": "2.0.0",
+                "Content-Type": "application/json",
+            },
+            json_body={
+                "author": author,
+                "commentary": data["content"],
+                "visibility": "PUBLIC",
+                "distribution": {
+                    "feedDistribution": "MAIN_FEED",
+                    "targetEntities": [],
+                    "thirdPartyDistributionChannels": [],
+                },
+                "lifecycleState": "PUBLISHED",
+                "isReshareDisabledByAuthor": True,
+            },
+        )
         post_id = response.headers.get("x-restli-id", "")
         if not post_id: raise RuntimeError("invalid_api_response")
         return post_id, "https://www.linkedin.com/feed/update/" + post_id

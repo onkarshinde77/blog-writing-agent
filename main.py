@@ -136,10 +136,74 @@ if st.session_state.get("viewing_history", False):
     )
     st.stop()
 
-# UI Input for Blog Topic
-topic_input = st.text_input("Enter a topic for the blog post:", placeholder="e.g., The Future of Artificial Intelligence")
+# Choose normal generation or a temporary publishing check using an existing article.
+workflow_mode = st.radio(
+    "Start with",
+    ["Generate a new blog", "Publish an existing blog"],
+    horizontal=True,
+    key="workflow_mode",
+)
 
-if st.button("Generate Blog Post", type="primary"):
+if workflow_mode == "Publish an existing blog":
+    st.info(
+        "This path skips generation, research, and automated quality checks. "
+        "You will still review the article and approve WordPress.com and DEV.to "
+        "before they publish; LinkedIn has a separate approval step."
+    )
+    with st.form("existing_blog_publish_test"):
+        existing_title = st.text_input("Blog title")
+        existing_description = st.text_input("Short description (optional)")
+        existing_tags = st.text_input("Tags, separated by commas (optional)")
+        existing_content = st.text_area(
+            "Paste the existing blog (Markdown)", height=420,
+            placeholder="# Your title\n\nPaste the complete article here...",
+        )
+        submit_existing_blog = st.form_submit_button(
+            "Continue to publishing approval", type="primary"
+        )
+
+    if submit_existing_blog:
+        if not existing_title.strip() or not existing_content.strip():
+            st.warning("Enter a title and paste the blog content to continue.")
+        else:
+            import uuid
+
+            current_thread_id = str(uuid.uuid4())
+            run_config = {
+                "configurable": {"thread_id": current_thread_id},
+                "run_name": "existing-blog-publishing-test",
+            }
+            manual_state = {
+                "topic": existing_title.strip(),
+                "input_mode": "existing",
+                "existing_blog": {
+                    "title": existing_title.strip(),
+                    "description": existing_description.strip(),
+                    "tags": [tag.strip() for tag in existing_tags.split(",") if tag.strip()],
+                    "content": existing_content,
+                },
+                "mode": "manual",
+                "needs_research": False,
+                "queries": [],
+                "evidence": [],
+                "plan": None,
+                "sections": [],
+                "final": "",
+                "workflow_id": current_thread_id,
+            }
+            try:
+                st.session_state.active_workflow_id = current_thread_id
+                st.session_state.viewing_history = False
+                app.invoke(manual_state, config=run_config)
+            except Exception as exc:
+                st.error(f"Could not prepare the existing blog for review: {exc}")
+            else:
+                st.rerun()
+
+else:
+    topic_input = st.text_input("Enter a topic for the blog post:", placeholder="e.g., The Future of Artificial Intelligence")
+
+if workflow_mode == "Generate a new blog" and st.button("Generate Blog Post", type="primary"):
     if not topic_input.strip():
         st.warning("Please enter a topic to continue.")
     else:
@@ -311,12 +375,20 @@ if active_id:
             if pending.get("type") == "blog_review":
                 st.subheader("Blog review")
                 quality_gate = pending.get("quality_gate") or {}
-                st.success("Final quality gate passed")
+                if quality_gate.get("status") == "passed":
+                    st.success("Final quality gate passed")
+                elif quality_gate.get("status") == "skipped":
+                    st.info("Manual article supplied; automated generation quality checks were skipped.")
+                else:
+                    st.warning("No completed quality-gate report is attached to this article.")
                 with st.expander("Topic & audience analysis", expanded=False):
                     st.json(pending.get("topic_analysis") or {})
                 with st.expander("Quality-control report", expanded=False):
                     st.json(quality_gate)
-                st.json(pending.get("review") or {})
+                if pending.get("review"):
+                    st.json(pending["review"])
+                else:
+                    st.caption("Automated content review was skipped for this publishing test.")
                 current_blog = dict(pending.get("blog") or {})
                 current_blog["content"] = normalize_markdown_math(current_blog.get("content", ""))
                 edited_title = st.text_input("Title", current_blog.get("title", ""), key="approval_title")

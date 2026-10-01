@@ -51,6 +51,36 @@ def _blog(state: State) -> dict:
     return {"title": title, "content": normalize_markdown_math(state.get("final", "")), "description": (state.get("topic") or title)[:280], "tags": list(dict.fromkeys(tags))[:5], "cover_image": None, "canonical_url": ""}
 
 
+def manual_blog_node(state: State) -> dict:
+    """Prepare user-supplied Markdown for the regular publishing approval flow."""
+    supplied = state.get("existing_blog") or {}
+    title = str(supplied.get("title") or state.get("topic") or "").strip()
+    content = normalize_markdown_math(str(supplied.get("content") or "")).strip()
+    if not title:
+        raise ValueError("Enter a title for the existing blog.")
+    if not content:
+        raise ValueError("Paste the existing blog content before continuing.")
+    blog = {
+        "title": title,
+        "content": content,
+        "description": str(supplied.get("description") or title)[:280],
+        "tags": [str(tag).strip() for tag in supplied.get("tags", []) if str(tag).strip()][:5],
+        "cover_image": None,
+        "canonical_url": "",
+    }
+    return {
+        "topic": title,
+        "final": content,
+        "blog_plan": blog,
+        "review": None,
+        "quality_report": {
+            "status": "skipped",
+            "summary": "User-supplied article; generation and automated quality checks were bypassed for this publishing test.",
+            "findings": [],
+        },
+    }
+
+
 def review_node(state: State) -> dict:
     started = time.monotonic()
     blog = _blog(state)

@@ -136,6 +136,8 @@ class LinkedInDraft(TypedDict):
 class State(TypedDict):
     """Global state for the LangGraph workflow."""
     topic: str
+    input_mode: str
+    existing_blog: Optional[BlogData]
     # routing / research
     mode: str
     needs_research: bool

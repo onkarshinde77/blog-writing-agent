@@ -19,7 +19,7 @@ from src.nodes.quality_control import (
     route_quality_check,
 )
 from src.publishing.nodes import (
-    review_node, blog_approval_node, revise_node, route_blog_approval,
+    manual_blog_node, review_node, blog_approval_node, revise_node, route_blog_approval,
     publish_fanout, publisher_task, aggregate_publications,
     linkedin_content_node, linkedin_approval_node, route_linkedin_approval,
     linkedin_publish_node, final_result_node,
@@ -30,6 +30,12 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 _checkpointer_manager = None
+
+
+def route_start(state: State) -> str:
+    """Choose generation or the user-supplied publishing test path."""
+    return "manual_blog" if state.get("input_mode") == "existing" else "router"
+
 
 def _checkpointer():
     """Use the project's local SQLite file for durable workflow checkpoints."""
@@ -57,6 +63,7 @@ def build_graph():
     graph = StateGraph(State)
 
     # Add nodes
+    graph.add_node("manual_blog", manual_blog_node)
     graph.add_node("router", router_node)
     graph.add_node("research", research_node)
     graph.add_node("topic_analysis", topic_analysis_node)
@@ -77,7 +84,12 @@ def build_graph():
     graph.add_node("finish", final_result_node)
     
     # Add edges
-    graph.add_edge(START, "router")
+    graph.add_conditional_edges(
+        START,
+        route_start,
+        {"router": "router", "manual_blog": "manual_blog"},
+    )
+    graph.add_edge("manual_blog", "blog_approval")
     
     # Conditional edge: research needed or not
     graph.add_conditional_edges(
